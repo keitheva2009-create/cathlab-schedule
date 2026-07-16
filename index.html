@@ -378,7 +378,7 @@ function defaultState(){
     options:{
       sex:['M','F'],
       procedures:['CAG','PCI','POBA','PTA','FFR','EPS','RFCA','PPM','TPM','ICD','CRT'],
-      physicians:['林彥良','許如瑩'],
+      physicians:[],
       beds:[],
       details:['WPW','PSVT','AVNRT','AF','AFL','VT','LRA','RRA','LFA','RFA'],
     },
@@ -1343,7 +1343,7 @@ $('#jumpDate').onchange = e => { if(e.target.value){ weekStart = mondayOf(new Da
 $('#btnPrint').onclick = () => window.print();
 $('#btnSettings').onclick = openSettings;
 $('#btnShare').onclick = async () => {
-  const msg = '心導管室排程系統\n請用 Chrome 或 Edge 開啟 Dropbox 資料夾「心導管排程」裡的 index.html\n本機路徑參考：' + decodeURIComponent(location.href);
+  const msg = '心導管室排程系統\n👉 點此開啟：https://keitheva2009-create.github.io/cathlab-schedule/\n（請用 Chrome 或 Edge。第一次開啟請點「開啟現有資料檔…」，選擇 Dropbox「心導管排程」資料夾中的排程資料檔；需先加入該 Dropbox 共享資料夾）';
   try{
     await navigator.clipboard.writeText(msg);
     toast('已複製分享訊息，可直接貼給同事');
