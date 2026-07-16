@@ -1,0 +1,1460 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>心導管室排程</title>
+<style>
+:root{
+  --line:#c8c8c8;
+  --dark:#555;
+  --r0:#1a56a8; --r0-bg:#e8f0fe; --r0-cell:#f4f8ff;
+  --r1:#1b7a43; --r1-bg:#e6f4ea; --r1-cell:#f3faf5;
+}
+*{box-sizing:border-box}
+html,body{height:100%}
+body{
+  margin:0; font-family:"Segoe UI","Microsoft JhengHei","PingFang TC",sans-serif;
+  font-size:13px; color:#222; background:#fff;
+  display:flex; flex-direction:column;
+}
+/* ---------- toolbar ---------- */
+#toolbar{
+  display:flex; align-items:center; gap:8px; flex-wrap:wrap;
+  padding:8px 12px; border-bottom:1px solid #ddd; background:#fafafa;
+}
+#toolbar h1{font-size:17px; margin:0 10px 0 0; white-space:nowrap}
+#toolbar .sub{color:#888; font-size:12px; white-space:nowrap}
+#toolbar button{
+  padding:5px 10px; border:1px solid #bbb; border-radius:6px; background:#fff;
+  cursor:pointer; font-size:13px; font-family:inherit;
+}
+#toolbar button:hover{background:#f0f0f0}
+#weekLabel{font-weight:bold; margin:0 4px; white-space:nowrap}
+#jumpDate{padding:4px; border:1px solid #bbb; border-radius:6px; font-family:inherit}
+.spacer{flex:1}
+#saveStatus{color:#1b7a43; font-size:12px; white-space:nowrap}
+#banner{
+  background:#fff3cd; color:#7a5c00; padding:6px 12px; font-size:12.5px;
+  border-bottom:1px solid #e8d48a;
+}
+.hidden{display:none !important}
+
+/* ---------- grid ---------- */
+#scroll{flex:1; overflow:auto}
+#grid{border-collapse:separate; border-spacing:0; table-layout:fixed}
+#grid th, #grid td{
+  border-right:1px solid var(--line); border-bottom:1px solid var(--line);
+  padding:2px 5px; font-weight:normal; text-align:left;
+  overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
+}
+#grid thead th{position:sticky; background:#fff; z-index:5}
+#grid thead tr.rooms th{top:0; height:30px; font-weight:bold; text-align:center; font-size:14px}
+#grid thead tr.cols  th{top:30px; height:28px; background:#f5f5f5; font-weight:bold; border-bottom:2px solid var(--dark)}
+#grid thead th.roomname.r0{background:var(--r0-bg); color:var(--r0)}
+#grid thead th.roomname.r1{background:var(--r1-bg); color:var(--r1)}
+#grid thead th.corner{left:0; z-index:7}
+#grid thead th.h-day{left:0; z-index:7}
+#grid thead th.h-time{left:64px; z-index:7}
+
+td.daycell{
+  position:sticky; left:0; z-index:3; background:#fafafa;
+  text-align:center; font-weight:bold; vertical-align:top; padding-top:10px;
+}
+td.daycell .d{color:#666; font-weight:normal; margin-top:2px}
+tbody.today td.daycell{background:#fff8d6; color:#a4660a}
+td.timecell{
+  position:sticky; left:64px; z-index:3; background:#fff;
+  color:#444; font-size:12px; text-align:center;
+}
+tr.extra td{background:#e9e9e9}
+tr.extra td.timecell{background:#e2e2e2; font-weight:bold}
+tr.pm-start td{border-top:2px solid #999}
+tbody.day > tr:first-child > td{border-top:3px solid #444}
+
+td.empty{cursor:pointer; height:26px}
+td.empty:hover{background:#eef5ff}
+tr.extra td.empty:hover{background:#dde8f5}
+td.filled{cursor:pointer; vertical-align:top}
+td.filled.r0{background:var(--r0-cell)}
+td.filled.r1{background:var(--r1-cell)}
+td.filled.c-name{font-weight:bold}
+td.filled.c-note{white-space:pre-wrap; font-size:12px; color:#555}
+td.filled:hover{filter:brightness(0.96)}
+
+/* 手術進行中／已完成 標示 */
+td.filled.live{background:#ffe9e6}
+#grid td.filled.live.c-name{border-left:4px solid #e53935}   /* 高於 #grid .rs 的優先度，第二室的進行中紅邊才不會被分隔線蓋掉 */
+td.filled.done{background:#eef6ee}
+.op-badge{display:block; font-size:11px; font-weight:normal; white-space:nowrap}
+.op-badge.live{color:#c62828; font-weight:bold}
+.op-badge.live::before{content:'●'; margin-right:3px; animation:opblink 1.2s infinite}
+.op-badge.done{color:#2e7d32}
+@keyframes opblink{0%,100%{opacity:1}50%{opacity:.15}}
+
+/* 兩間導管室之間的粗分隔線 */
+#grid .rs{border-left:3px solid #555}
+
+/* 劃線取消（保留原格） */
+.cxl{
+  display:block; text-decoration:line-through; color:#9aa0a6;
+  font-size:12px; font-weight:normal; cursor:pointer;
+  white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
+}
+.cxl:hover{color:#c62828}
+#cxl-info{margin-top:10px; background:#f1f3f4; color:#5f6368; padding:8px 10px; border-radius:6px; font-size:12.5px}
+.dialog-actions button.warn{border-color:#b26a00; color:#b26a00}
+.dialog-actions button.warn:hover{background:#fff3cd}
+
+/* 手術開始／結束 操作列 */
+.op-row{
+  display:flex; align-items:center; gap:8px; flex-wrap:wrap;
+  margin-top:14px; padding:10px 12px; background:#f7f7f7; border-radius:8px; font-size:13px;
+}
+.op-row b{font-size:14px}
+.op-row button{padding:6px 12px; border:1px solid #bbb; border-radius:6px; background:#fff; cursor:pointer; font-family:inherit}
+.op-row button.start{border-color:#2e7d32; color:#2e7d32; font-weight:bold}
+.op-row button.start:hover{background:#eef6ee}
+.op-row button.end{border-color:#c62828; color:#c62828; font-weight:bold}
+.op-row button.end:hover{background:#fdecea}
+.op-row .op-clear{border:none; background:none; color:#999; padding:2px 6px}
+.op-row .op-clear:hover{color:#c62828}
+.op-row .op-gap{margin-left:14px}
+
+/* ---------- dialogs ---------- */
+.overlay{
+  position:fixed; inset:0; background:rgba(0,0,0,.35); z-index:50;
+  display:flex; align-items:center; justify-content:center; padding:16px;
+}
+.dialog{
+  background:#fff; border-radius:10px; box-shadow:0 8px 30px rgba(0,0,0,.25);
+  padding:18px 20px; max-width:660px; width:100%; max-height:92vh; overflow:auto;
+}
+.dialog h2{margin:0 0 12px; font-size:16px}
+.form-grid{display:grid; grid-template-columns:repeat(4,1fr); gap:8px 10px}
+.form-grid label{display:flex; flex-direction:column; gap:3px; font-size:12px; color:#555}
+.form-grid label.wide{grid-column:1 / -1}
+.form-grid label.half{grid-column:span 2}
+.form-grid input, .form-grid select, .form-grid textarea{
+  padding:5px 6px; border:1px solid #bbb; border-radius:6px; font-size:13px;
+  font-family:inherit; width:100%;
+}
+.form-grid textarea{resize:vertical}
+.form-grid label.chk{flex-direction:row; align-items:center; gap:6px; font-size:13px; color:#222}
+.form-grid label.chk input{width:auto}
+.dialog-actions{display:flex; gap:8px; margin-top:16px; align-items:center}
+.dialog-actions button{
+  padding:7px 16px; border:1px solid #bbb; border-radius:6px; background:#fff;
+  cursor:pointer; font-size:13px; font-family:inherit;
+}
+.dialog-actions button.primary{background:#1a56a8; border-color:#1a56a8; color:#fff}
+.dialog-actions button.primary:hover{background:#164a92}
+.dialog-actions button.danger{background:#fff; border-color:#c62828; color:#c62828}
+.dialog-actions button.danger:hover{background:#fdecea}
+.data-tools{
+  margin-top:14px; padding-top:12px; border-top:1px solid #eee;
+  display:flex; gap:8px; align-items:center; flex-wrap:wrap; font-size:12px; color:#666;
+}
+.data-tools button{padding:5px 10px; border:1px solid #bbb; border-radius:6px; background:#fff; cursor:pointer; font-family:inherit}
+
+/* ---------- Excel 匯入 ---------- */
+.imp-dialog{max-width:920px}
+.imp-hint{color:#777; font-size:12.5px; margin:0 0 10px; line-height:1.6}
+.imp-controls{display:flex; gap:12px; align-items:center; flex-wrap:wrap; margin-bottom:10px}
+.imp-controls button{padding:6px 12px; border:1px solid #bbb; border-radius:6px; background:#fff; cursor:pointer; font-family:inherit}
+.imp-controls label{font-size:12.5px; color:#555; display:flex; align-items:center; gap:5px}
+.imp-controls select{padding:4px 6px; border:1px solid #bbb; border-radius:6px; font-family:inherit}
+.imp-fname{font-size:12.5px; color:#1a56a8}
+.imp-ok{background:#e6f4ea; color:#17623b; padding:7px 10px; border-radius:6px; font-size:13px; margin-bottom:8px}
+.imp-error{background:#fdecea; color:#b3261e; padding:7px 10px; border-radius:6px; font-size:13px; margin-bottom:8px}
+.imp-warn{background:#fff3cd; color:#7a5c00; padding:7px 10px; border-radius:6px; font-size:12px; margin-bottom:8px; max-height:110px; overflow:auto; line-height:1.6}
+#imp-preview{max-height:45vh; overflow:auto}
+#imp-preview:not(:empty){border:1px solid #ddd; border-radius:6px}
+.imp-table{border-collapse:collapse; width:100%; font-size:12px}
+.imp-table th, .imp-table td{border:1px solid #e3e3e3; padding:3px 6px; white-space:nowrap; text-align:left}
+.imp-table th{position:sticky; top:0; background:#f5f5f5; z-index:1}
+.imp-more{padding:6px; color:#888; font-size:12px}
+.st-add{color:#17623b; font-weight:bold}
+.st-dup{color:#999}
+.st-con{color:#b3261e}
+.st-note{color:#b26a00; font-size:11px}
+
+/* ---------- start overlay ---------- */
+#startOverlay .dialog{max-width:480px; text-align:center}
+#startOverlay p{color:#555; font-size:13px; line-height:1.6}
+#startButtons{display:flex; flex-direction:column; gap:10px; margin:16px 0 8px}
+#startButtons button{
+  padding:11px 14px; border:1px solid #bbb; border-radius:8px; background:#fff;
+  cursor:pointer; font-size:14px; font-family:inherit;
+}
+#startButtons button:hover{background:#f0f6ff}
+#startButtons button.primary{background:#1a56a8; border-color:#1a56a8; color:#fff}
+#startButtons button.minor{font-size:12.5px; color:#777; border-style:dashed}
+#st-hint{font-size:12px; color:#999}
+
+/* ---------- toast ---------- */
+#toast{
+  position:fixed; bottom:18px; right:18px; z-index:99;
+  background:#333; color:#fff; padding:9px 16px; border-radius:8px; font-size:13px;
+  box-shadow:0 4px 14px rgba(0,0,0,.3);
+}
+
+/* ---------- print ---------- */
+@page{size:A4 landscape; margin:8mm}
+@media print{
+  #toolbar,#banner,#toast,.overlay{display:none !important}
+  body{height:auto}
+  #scroll{overflow:visible; height:auto}
+  #grid thead th, td.daycell, td.timecell{position:static}
+  #grid{width:100% !important; table-layout:auto !important}
+  #grid col{width:auto !important}
+  #grid th, #grid td{font-size:9.5px; padding:1px 3px; white-space:normal; word-break:break-word}
+  .op-badge.live::before{animation:none}
+}
+</style>
+</head>
+<body>
+
+<header id="toolbar">
+  <h1>心導管室排程</h1>
+  <button id="prevWeek">◀ 上週</button>
+  <button id="thisWeek">本週</button>
+  <button id="nextWeek">下週 ▶</button>
+  <input type="date" id="jumpDate" title="跳至指定日期之週">
+  <span id="weekLabel"></span>
+  <span class="sub">點空白格新增／點個案可編輯</span>
+  <span class="spacer"></span>
+  <span id="saveStatus"></span>
+  <button id="btnImportXlsx">📥 匯入Excel</button>
+  <button id="btnShare">🔗 分享</button>
+  <button id="btnSettings">⚙ 設定</button>
+  <button id="btnPrint">🖨 列印</button>
+</header>
+
+<div id="banner" class="hidden"></div>
+
+<div id="scroll"><table id="grid"></table></div>
+
+<!-- 個案編輯 -->
+<div class="overlay hidden" id="caseModal">
+  <div class="dialog">
+    <h2 id="caseModalTitle">新增排程</h2>
+    <div class="form-grid">
+      <label>日期<input type="date" id="f-date"></label>
+      <label>導管室<select id="f-room"></select></label>
+      <label>開始時段<select id="f-slot"></select></label>
+      <label>佔用時間<select id="f-span"></select></label>
+      <label>姓名 *<input id="f-name" autocomplete="off"></label>
+      <label>病歷號<input id="f-chartNo" autocomplete="off"></label>
+      <label>生日<input id="f-birthday" placeholder="YYYY/MM/DD" autocomplete="off"></label>
+      <label>性別<select id="f-sex"></select></label>
+      <label>術式<input id="f-procedure" list="dl-procedure" autocomplete="off"></label>
+      <label>醫師<input id="f-physician" list="dl-physician" autocomplete="off"></label>
+      <label class="half">床號/醫院<input id="f-bed" list="dl-bed" autocomplete="off"></label>
+      <label>細項<input id="f-detail" list="dl-detail" autocomplete="off"></label>
+      <label class="wide">備註<textarea id="f-note" rows="2"></textarea></label>
+    </div>
+    <div class="op-row" id="opRow">
+      <span>手術開始：<b id="op-start-time">—</b></span>
+      <button id="f-start" class="start" type="button">▶ 現在開始</button>
+      <button id="f-start-clear" class="op-clear hidden" type="button" title="清除開始時間">✕</button>
+      <span class="op-gap">手術結束：<b id="op-end-time">—</b></span>
+      <button id="f-end" class="end" type="button">■ 現在結束</button>
+      <button id="f-end-clear" class="op-clear hidden" type="button" title="清除結束時間">✕</button>
+    </div>
+    <div id="cxl-info" class="hidden"></div>
+    <div class="dialog-actions">
+      <button id="f-cancelCase" class="warn hidden">✂ 取消排程（劃線保留）</button>
+      <button id="f-delete" class="danger">刪除（永久）</button>
+      <span class="spacer"></span>
+      <button id="f-cancel">取消</button>
+      <button id="f-save" class="primary">儲存</button>
+    </div>
+  </div>
+</div>
+
+<!-- 設定 -->
+<div class="overlay hidden" id="settingsModal">
+  <div class="dialog">
+    <h2>設定</h2>
+    <div class="form-grid">
+      <label class="half">導管室 1 名稱<input id="s-room0"></label>
+      <label class="half">導管室 2 名稱<input id="s-room1"></label>
+      <label class="chk half"><input type="checkbox" id="s-sat">顯示週六</label>
+      <label class="chk half"><input type="checkbox" id="s-sun">顯示週日</label>
+      <label class="half">術式選單（每行一項）<textarea id="s-procedures" rows="7"></textarea></label>
+      <label class="half">醫師選單（每行一項）<textarea id="s-physicians" rows="7"></textarea></label>
+      <label class="half">床號/醫院選單（每行一項）<textarea id="s-beds" rows="7"></textarea></label>
+      <label class="half">細項選單（每行一項）<textarea id="s-details" rows="7"></textarea></label>
+    </div>
+    <div class="data-tools">
+      <span id="s-fileinfo"></span>
+      <button id="s-changeFile">更換資料檔…</button>
+      <button id="s-export">匯出備份</button>
+      <button id="s-import">匯入資料…</button>
+      <input type="file" id="s-importFile" accept=".json" hidden>
+    </div>
+    <div class="dialog-actions">
+      <span class="spacer"></span>
+      <button id="s-cancel">取消</button>
+      <button id="s-save" class="primary">儲存設定</button>
+    </div>
+  </div>
+</div>
+
+<!-- Excel 匯入 -->
+<div class="overlay hidden" id="importModal">
+  <div class="dialog imp-dialog">
+    <h2>從 Excel 匯入排程</h2>
+    <p class="imp-hint">請先在 Google 試算表點「檔案 → 下載 → Microsoft Excel (.xlsx)」，再於此選擇下載的檔案。<br>
+    系統會自動辨識：日期（星期X 月/日）、時段（8:00~ 8:30、加台1…）、左右兩室的欄位（姓名、病歷號、生日、性別、術式、醫師、床號/醫院、細項、備註），跨列合併的儲存格會自動換算成佔用時段。</p>
+    <div class="imp-controls">
+      <button id="imp-pick" type="button">選擇 Excel 檔案…</button>
+      <span id="imp-fname" class="imp-fname"></span>
+      <label>工作表 <select id="imp-sheet" disabled></select></label>
+      <label>年份 <select id="imp-year"></select></label>
+    </div>
+    <div id="imp-summary"></div>
+    <div id="imp-warnings"></div>
+    <div id="imp-preview"></div>
+    <div class="dialog-actions">
+      <span class="spacer"></span>
+      <button id="imp-cancel">取消</button>
+      <button id="imp-confirm" class="primary" disabled>匯入</button>
+    </div>
+    <input type="file" id="imp-file" accept=".xlsx" hidden>
+  </div>
+</div>
+
+<!-- 啟動選擇 -->
+<div class="overlay" id="startOverlay">
+  <div class="dialog">
+    <h2>心導管室排程系統</h2>
+    <p>請選擇排程資料檔。建議將資料檔存放在<b>本資料夾（Dropbox）內</b>，<br>即可透過 Dropbox 在多台電腦之間同步。</p>
+    <div id="startButtons">
+      <button id="st-reconnect" class="primary hidden">重新連線資料檔：<span id="st-fname"></span></button>
+      <button id="st-create">建立新資料檔…</button>
+      <button id="st-open">開啟現有資料檔…</button>
+      <button id="st-trial" class="minor">試用模式（資料僅暫存於此瀏覽器）</button>
+    </div>
+    <p id="st-hint"></p>
+  </div>
+</div>
+
+<div id="toast" class="hidden"></div>
+
+<datalist id="dl-procedure"></datalist>
+<datalist id="dl-physician"></datalist>
+<datalist id="dl-bed"></datalist>
+<datalist id="dl-detail"></datalist>
+
+<script>
+'use strict';
+/* ================= 基本常數 ================= */
+const AM = ['0800','0830','0900','0930','1000','1030','1100','1130'];
+const PM = ['1300','1330','1400','1430','1500','1530','1600','1630'];
+const DAY_SLOTS = [...AM,'X1','X2',...PM,'X3','X4'];
+const WEEKNAMES = ['星期日','星期一','星期二','星期三','星期四','星期五','星期六'];
+
+const COLS = [
+  {k:'name',      label:'姓名',     w:104},
+  {k:'chartNo',   label:'病歷號',   w:90},
+  {k:'birthday',  label:'生日',     w:100},
+  {k:'sex',       label:'性別',     w:46},
+  {k:'procedure', label:'術式',     w:80},
+  {k:'physician', label:'醫師',     w:80},
+  {k:'bed',       label:'床號/醫院', w:110},
+  {k:'detail',    label:'細項',     w:90},
+  {k:'note',      label:'備註',     w:170},
+];
+const W_DAY = 64, W_TIME = 88;
+const TABLE_W = W_DAY + W_TIME + 2 * COLS.reduce((s,c)=>s+c.w,0);
+
+function defaultState(){
+  return {
+    app:'cathlab-schedule', version:2,
+    roomNames:['Philip','SIEMENS'],
+    showSat:true, showSun:false,
+    options:{
+      sex:['M','F'],
+      procedures:['CAG','PCI','POBA','PTA','FFR','EPS','RFCA','PPM','TPM','ICD','CRT'],
+      physicians:['林彥良','許如瑩'],
+      beds:[],
+      details:['WPW','PSVT','AVNRT','AF','AFL','VT','LRA','RRA','LFA','RFA'],
+    },
+    cases:[],
+  };
+}
+
+/* ================= 全域狀態 ================= */
+let state = defaultState();
+let fileHandle = null;      // FileSystemFileHandle
+let pendingHandle = null;   // 待重新授權的 handle
+let lastMod = 0;            // 資料檔 lastModified
+let mode = 'none';          // 'file' | 'local'
+let editing = null;         // 正在編輯的個案物件
+let weekStart = mondayOf(new Date());
+
+const $ = s => document.querySelector(s);
+
+/* ================= 小工具 ================= */
+function esc(s){ return String(s ?? '').replace(/[&<>"']/g, m => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m])); }
+function uid(){ return Date.now().toString(36) + Math.random().toString(36).slice(2,8); }
+function ymd(d){ return d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0') + '-' + String(d.getDate()).padStart(2,'0'); }
+function md(d){ return (d.getMonth()+1) + '/' + d.getDate(); }
+function mondayOf(d){ const x = new Date(d); x.setHours(0,0,0,0); x.setDate(x.getDate() - (x.getDay()+6)%7); return x; }
+function addDays(d,n){ const x = new Date(d); x.setDate(x.getDate()+n); return x; }
+function nowTime(){ return new Date().toLocaleTimeString('zh-TW',{hour12:false}); }
+
+function slotEnd(s){ let h = +s.slice(0,2), m = +s.slice(2) + 30; if(m===60){h++; m=0;} return h + ':' + String(m).padStart(2,'0'); }
+function slotLabel(s){ return s[0]==='X' ? '加台'+s[1] : (+s.slice(0,2)) + ':' + s.slice(2) + '~' + slotEnd(s); }
+function maxSpan(s){
+  if(s[0]==='X') return 1;
+  const a = AM.indexOf(s); if(a >= 0) return AM.length - a;
+  const p = PM.indexOf(s); return p >= 0 ? PM.length - p : 1;
+}
+function spanLabel(n){ return n===1 ? '30 分鐘' : (n/2) + ' 小時'; }
+function rangeOf(c){ const i = DAY_SLOTS.indexOf(c.slot); return [i, i + (c.span||1) - 1]; }
+
+function fmtT(iso){
+  if(!iso) return '';
+  const d = new Date(iso);
+  return isNaN(d) ? '' : d.toLocaleTimeString('zh-TW', {hour12:false, hour:'2-digit', minute:'2-digit'});
+}
+function fmtDT(iso){
+  if(!iso) return '';
+  const d = new Date(iso);
+  return isNaN(d) ? '' : (d.getMonth() + 1) + '/' + d.getDate() + ' ' + fmtT(iso);
+}
+/* 已取消排程在表格中的劃線顯示 */
+function cxlSpan(c, k){
+  const v = c[k] || '';
+  if(!v && k !== 'name') return '';
+  return `<span class="cxl" data-cxl-id="${esc(c.id)}" title="已取消 ${fmtDT(c.cancelledAt)}（原佔 ${spanLabel(c.span||1)}）｜點擊可檢視或復原">${esc(v || '(未填)')}</span>`;
+}
+
+function opText(c){
+  if(c.startedAt && !c.endedAt) return '手術中 ' + fmtT(c.startedAt) + '~';
+  if(c.endedAt) return '✔ ' + fmtT(c.startedAt) + '~' + fmtT(c.endedAt);
+  return '';
+}
+function opBadge(c){
+  const t = opText(c);
+  if(!t) return '';
+  return `<span class="op-badge ${c.endedAt ? 'done' : 'live'}">${esc(t)}</span>`;
+}
+
+function toast(msg){
+  const t = $('#toast'); t.textContent = msg; t.classList.remove('hidden');
+  clearTimeout(toast._t); toast._t = setTimeout(()=>t.classList.add('hidden'), 3500);
+}
+function setStatus(msg){ $('#saveStatus').textContent = msg; }
+
+function migrate(p){
+  const d = defaultState();
+  if(!p || typeof p !== 'object') return d;
+  const s = Object.assign(d, p);
+  s.app = 'cathlab-schedule';
+  if(p.showSat === undefined || (+p.version || 1) < 2) s.showSat = true;   /* v2 起預設開放週六排程 */
+  s.version = 2;
+  const rawOpts = (p.options && typeof p.options === 'object') ? p.options : {};
+  const defOpts = defaultState().options;
+  s.options = {};
+  for(const k of Object.keys(defOpts)){
+    s.options[k] = Array.isArray(rawOpts[k]) ? rawOpts[k].map(String).filter(Boolean) : defOpts[k];
+  }
+  if(!Array.isArray(s.roomNames) || s.roomNames.length < 2) s.roomNames = defaultState().roomNames;
+  s.roomNames = s.roomNames.slice(0,2).map(String);
+  s.cases = (Array.isArray(p.cases) ? p.cases : [])
+    .filter(c => c && typeof c === 'object' && c.date && DAY_SLOTS.includes(c.slot) && (+c.room === 0 || +c.room === 1));
+  const seenIds = new Set();
+  s.cases.forEach(c => {
+    c.room = +c.room;
+    c.span = Math.min(Math.max(+c.span || 1, 1), maxSpan(c.slot));
+    c.id = String(c.id || '') || uid();
+    if(seenIds.has(c.id)) c.id = uid();
+    seenIds.add(c.id);
+    if(typeof c.startedAt !== 'string') c.startedAt = '';
+    if(typeof c.endedAt !== 'string') c.endedAt = '';
+    if(typeof c.cancelledAt !== 'string') c.cancelledAt = '';
+  });
+  return s;
+}
+
+/* 解析資料檔內容；不是本系統的資料檔時丟出錯誤，避免誤讀／誤覆蓋其他檔案 */
+function parseAppData(txt){
+  const p = JSON.parse(txt);
+  if(!p || typeof p !== 'object' || p.app !== 'cathlab-schedule') throw new Error('這不是心導管排程系統的資料檔');
+  return migrate(p);
+}
+
+/* ================= IndexedDB（記住檔案 handle） ================= */
+function idb(){
+  return new Promise((res,rej)=>{
+    const r = indexedDB.open('cathlab-schedule', 1);
+    r.onupgradeneeded = () => r.result.createObjectStore('kv');
+    r.onsuccess = () => res(r.result);
+    r.onerror = () => rej(r.error);
+  });
+}
+async function idbSet(k,v){
+  const db = await idb();
+  return new Promise((res,rej)=>{
+    const tx = db.transaction('kv','readwrite');
+    tx.objectStore('kv').put(v,k);
+    tx.oncomplete = res; tx.onerror = () => rej(tx.error);
+  });
+}
+async function idbGet(k){
+  const db = await idb();
+  return new Promise((res,rej)=>{
+    const rq = db.transaction('kv').objectStore('kv').get(k);
+    rq.onsuccess = () => res(rq.result); rq.onerror = () => rej(rq.error);
+  });
+}
+
+/* ================= 儲存與同步 ================= */
+let saving = false, writeGen = 0;   /* 供輪詢判斷「本機正在寫入／剛寫入過」 */
+async function persist(){
+  /* 試用模式與檔案模式使用不同的瀏覽器暫存鍵，連線資料檔後不會蓋掉試用資料 */
+  try{ localStorage.setItem(mode === 'file' ? 'cathlab-data' : 'cathlab-trial', JSON.stringify(state)); }catch(e){}
+  if(mode === 'file' && fileHandle){
+    saving = true;
+    try{
+      const w = await fileHandle.createWritable();
+      await w.write(JSON.stringify(state, null, 1));
+      await w.close();
+      lastMod = (await fileHandle.getFile()).lastModified;
+      writeGen++;
+      setStatus('✔ 已儲存 ' + nowTime());
+      return true;
+    }catch(e){
+      setStatus('⚠ 儲存失敗');
+      toast('儲存失敗：' + e.message);
+      return false;
+    }finally{
+      saving = false;
+    }
+  }else{
+    setStatus('已暫存於瀏覽器 ' + nowTime());
+    return true;
+  }
+}
+
+/* 每 4 秒：跨日時更新「今天」標示；並檢查資料檔是否被其他電腦（Dropbox 同步）更新 */
+let lastDayKey = ymd(new Date());
+function modalOpen(){
+  return !$('#caseModal').classList.contains('hidden')
+      || !$('#settingsModal').classList.contains('hidden')
+      || !$('#importModal').classList.contains('hidden');
+}
+/* 只有設定視窗需要暫停同步（其表單是整份選單的快照）；
+   編輯/匯入視窗開著時照常吸收其他電腦的更新，避免久開視窗後儲存時整份蓋掉別人的變更 */
+function settingsOpen(){ return !$('#settingsModal').classList.contains('hidden'); }
+setInterval(async ()=>{
+  const dk = ymd(new Date());
+  if(dk !== lastDayKey && !modalOpen()){ lastDayKey = dk; render(); }
+  if(mode !== 'file' || !fileHandle || settingsOpen() || saving) return;
+  const h = fileHandle, genAtStart = writeGen;
+  try{
+    const f = await h.getFile();
+    if(f.lastModified === lastMod) return;
+    const txt = await f.text();
+    /* 讀檔期間本機開了設定視窗、寫入了檔案、或已更換資料檔 → 放棄此輪，下次再讀 */
+    if(settingsOpen() || saving || writeGen !== genAtStart || h !== fileHandle) return;
+    let parsed;
+    try{ parsed = JSON.parse(txt); }catch(e){ return; /* Dropbox 寫入到一半，下次再讀 */ }
+    if(!parsed || parsed.app !== 'cathlab-schedule') return;
+    state = migrate(parsed);
+    lastMod = f.lastModified;
+    render();
+    toast(!$('#caseModal').classList.contains('hidden')
+      ? '已載入其他電腦的更新；你編輯中的視窗不受影響，按儲存時以你輸入的內容為準'
+      : '已載入資料檔的外部更新');
+  }catch(e){ /* 檔案暫時被 Dropbox 鎖定時略過 */ }
+}, 4000);
+
+/* ================= 畫面渲染 ================= */
+function weekDays(){
+  const offs = [0,1,2,3,4];
+  if(state.showSat) offs.push(5);
+  if(state.showSun) offs.push(6);
+  return offs.map(i => addDays(weekStart, i));
+}
+
+function render(){
+  const days = weekDays();
+  $('#weekLabel').textContent = ymd(days[0]).replaceAll('-','/') + ' ～ ' + ymd(days[days.length-1]).replaceAll('-','/');
+  const grid = $('#grid');
+  grid.style.width = TABLE_W + 'px';
+  grid.innerHTML = colgroupHtml() + theadHtml() + days.map(d=>tbodyHtml(d)).join('');
+  refreshDatalists();
+}
+
+function colgroupHtml(){
+  let h = `<colgroup><col style="width:${W_DAY}px"><col style="width:${W_TIME}px">`;
+  for(let r=0; r<2; r++) COLS.forEach(c => h += `<col style="width:${c.w}px">`);
+  return h + '</colgroup>';
+}
+
+function theadHtml(){
+  return `<thead>
+    <tr class="rooms">
+      <th class="corner" colspan="2"></th>
+      <th class="roomname r0" colspan="${COLS.length}">${esc(state.roomNames[0])}</th>
+      <th class="roomname r1 rs" colspan="${COLS.length}">${esc(state.roomNames[1])}</th>
+    </tr>
+    <tr class="cols">
+      <th class="h-day">日期</th><th class="h-time">時間</th>
+      ${[0,1].map(r => COLS.map((c,ci)=>`<th${r===1&&ci===0?' class="rs"':''}>${c.label}</th>`).join('')).join('')}
+    </tr>
+  </thead>`;
+}
+
+function tbodyHtml(date){
+  const key = ymd(date);
+  const byRoom = [Object.create(null), Object.create(null)];
+  const cxlByRoom = [Object.create(null), Object.create(null)];
+  state.cases.filter(c => c.date === key).forEach(c => {
+    if(c.cancelledAt){   /* 劃線取消：不佔格，只留紀錄 */
+      (cxlByRoom[c.room][c.slot] = cxlByRoom[c.room][c.slot] || []).push(c);
+      return;
+    }
+    const i = DAY_SLOTS.indexOf(c.slot);
+    byRoom[c.room][c.slot] = {owner:c};
+    for(let k=1; k<(c.span||1); k++){
+      const s2 = DAY_SLOTS[i+k];
+      if(s2) byRoom[c.room][s2] = {cover:true};
+    }
+  });
+
+  let h = `<tbody class="day${key===ymd(new Date())?' today':''}">`;
+  DAY_SLOTS.forEach((s,ri)=>{
+    const cls = (s[0]==='X' ? 'extra' : '') + (s==='1300' ? ' pm-start' : '');
+    h += `<tr class="${cls}">`;
+    if(ri === 0){
+      h += `<td class="daycell" rowspan="${DAY_SLOTS.length}"><div>${WEEKNAMES[date.getDay()]}</div><div class="d">${md(date)}</div></td>`;
+    }
+    h += `<td class="timecell">${slotLabel(s)}</td>`;
+    for(let r=0; r<2; r++){
+      const e = byRoom[r][s];
+      if(e && e.cover) continue;
+      if(e && e.owner){
+        const c = e.owner;
+        const rsAttr = (c.span||1) > 1 ? ` rowspan="${c.span}"` : '';
+        const opCls = (c.startedAt && !c.endedAt) ? ' live' : (c.endedAt ? ' done' : '');
+        const i0 = DAY_SLOTS.indexOf(s);
+        const cxlIn = DAY_SLOTS.slice(i0, i0 + (c.span||1)).flatMap(s2 => cxlByRoom[r][s2] || []);
+        h += COLS.map((col, ci) => {
+          let inner = esc(c[col.k]||'');
+          let tip = c[col.k]||'';
+          if(col.k === 'name'){
+            inner += opBadge(c);
+            const ot = opText(c);
+            if(ot) tip += '\n' + ot;   /* 滑鼠停留可看完整手術時間 */
+            inner += cxlIn.map(x => cxlSpan(x, 'name')).join('');   /* 同格被取消的排程劃線顯示 */
+          }
+          return `<td class="filled r${r} c-${col.k}${opCls}${ci===0&&r===1?' rs':''}"${rsAttr} data-id="${esc(c.id)}" title="${esc(tip)}">${inner}</td>`;
+        }).join('');
+      }else{
+        const cxls = cxlByRoom[r][s] || [];
+        h += COLS.map((col, ci)=>
+          `<td class="empty${ci===0&&r===1?' rs':''}" data-date="${key}" data-room="${r}" data-slot="${s}">${cxls.map(x => cxlSpan(x, col.k)).join('')}</td>`
+        ).join('');
+      }
+    }
+    h += '</tr>';
+  });
+  return h + '</tbody>';
+}
+
+function refreshDatalists(){
+  const fill = (id, arr) => { $(id).innerHTML = (arr||[]).map(v=>`<option value="${esc(v)}">`).join(''); };
+  fill('#dl-procedure', state.options.procedures);
+  fill('#dl-physician', state.options.physicians);
+  fill('#dl-bed',       state.options.beds);
+  fill('#dl-detail',    state.options.details);
+}
+
+/* ================= 個案編輯 ================= */
+function refreshRoomSelect(){
+  $('#f-room').innerHTML = [0,1].map(r=>`<option value="${r}">${esc(state.roomNames[r])}</option>`).join('');
+}
+function refreshSlotSelect(){
+  $('#f-slot').innerHTML = DAY_SLOTS.map(s=>`<option value="${s}">${slotLabel(s)}</option>`).join('');
+}
+function refreshSexSelect(){
+  $('#f-sex').innerHTML = '<option value=""></option>' + (state.options.sex||['M','F']).map(v=>`<option>${esc(v)}</option>`).join('');
+}
+function refreshSpanSelect(keep){
+  const max = maxSpan($('#f-slot').value);
+  const cur = keep ?? (+$('#f-span').value || 1);
+  $('#f-span').innerHTML = Array.from({length:max},(_,i)=>`<option value="${i+1}">${spanLabel(i+1)}</option>`).join('');
+  $('#f-span').value = Math.min(cur, max);
+}
+
+let opStart = '', opEnd = '';   /* 編輯中的手術開始／結束時間戳（草稿） */
+let cxlDraft = '';              /* 編輯中的取消時間戳（草稿；空字串＝未取消） */
+function updateCxlUI(){
+  const btn = $('#f-cancelCase');
+  btn.classList.toggle('hidden', !editing);
+  btn.textContent = cxlDraft ? '↩ 復原排程' : '✂ 取消排程（劃線保留）';
+  $('#cxl-info').classList.toggle('hidden', !cxlDraft);
+  $('#opRow').classList.toggle('hidden', !!cxlDraft);   /* 已取消的排程不提供手術開始/結束按鈕，避免誤蓋時間戳 */
+  if(cxlDraft) $('#cxl-info').textContent = '⚠ 此排程已於 ' + fmtDT(cxlDraft) + ' 劃線取消（不佔時段，可按「復原排程」恢復）';
+}
+function renderOpUI(){
+  $('#op-start-time').textContent = opStart ? fmtT(opStart) : '—';
+  $('#op-end-time').textContent = opEnd ? fmtT(opEnd) : '—';
+  $('#f-start-clear').classList.toggle('hidden', !opStart);
+  $('#f-end-clear').classList.toggle('hidden', !opEnd);
+}
+
+function openCaseModal(caseObj, preset){
+  editing = caseObj || null;
+  const c = caseObj || {date:preset.date, room:+preset.room, slot:preset.slot, span:1,
+                        name:'', chartNo:'', birthday:'', sex:'', procedure:'', physician:'', bed:'', detail:'', note:''};
+  refreshRoomSelect(); refreshSlotSelect(); refreshSexSelect(); refreshDatalists();
+  $('#caseModalTitle').textContent = caseObj ? '編輯排程' : '新增排程';
+  $('#f-date').value = c.date;
+  $('#f-room').value = c.room;
+  $('#f-slot').value = c.slot;
+  refreshSpanSelect(c.span || 1);
+  $('#f-name').value = c.name || '';
+  $('#f-chartNo').value = c.chartNo || '';
+  $('#f-birthday').value = c.birthday || '';
+  $('#f-sex').value = c.sex || '';
+  $('#f-procedure').value = c.procedure || '';
+  $('#f-physician').value = c.physician || '';
+  $('#f-bed').value = c.bed || '';
+  $('#f-detail').value = c.detail || '';
+  $('#f-note').value = c.note || '';
+  opStart = c.startedAt || ''; opEnd = c.endedAt || '';
+  renderOpUI();
+  cxlDraft = c.cancelledAt || '';
+  updateCxlUI();
+  $('#f-delete').classList.toggle('hidden', !caseObj);
+  $('#caseModal').classList.remove('hidden');
+  $('#f-name').focus();
+}
+function closeCaseModal(){ $('#caseModal').classList.add('hidden'); editing = null; }
+
+function learnOption(list, val){
+  if(!val) return;
+  if(!state.options[list].includes(val)) state.options[list].push(val);
+}
+
+function saveCase(){
+  const slot = $('#f-slot').value;
+  const c = {
+    id: editing ? editing.id : uid(),
+    date: $('#f-date').value,
+    room: +$('#f-room').value,
+    slot,
+    span: Math.min(+$('#f-span').value || 1, maxSpan(slot)),
+    name: $('#f-name').value.trim(),
+    chartNo: $('#f-chartNo').value.trim(),
+    birthday: $('#f-birthday').value.trim(),
+    sex: $('#f-sex').value,
+    procedure: $('#f-procedure').value.trim(),
+    physician: $('#f-physician').value.trim(),
+    bed: $('#f-bed').value.trim(),
+    detail: $('#f-detail').value.trim(),
+    note: $('#f-note').value.trim(),
+    startedAt: opStart || '',
+    endedAt: opEnd || '',
+    cancelledAt: cxlDraft || '',
+  };
+  if(!c.date){ alert('請選擇日期'); return false; }
+  if(!c.name){ alert('請輸入姓名'); return false; }
+  if(!c.cancelledAt){   /* 已劃線取消的排程不佔時段，也不擋人 */
+    const [a1,a2] = rangeOf(c);
+    const clash = state.cases.find(o => {
+      if(o.id === c.id || o.cancelledAt || o.date !== c.date || o.room !== c.room) return false;
+      const [b1,b2] = rangeOf(o);
+      return a1 <= b2 && b1 <= a2;
+    });
+    if(clash){ alert('時段衝突：該時段已排「' + clash.name + '」（' + slotLabel(clash.slot) + '）'); return false; }
+  }
+  learnOption('procedures', c.procedure);
+  learnOption('physicians', c.physician);
+  learnOption('beds', c.bed);
+  learnOption('details', c.detail);
+  if(editing){
+    const live = state.cases.find(x => x.id === editing.id);   /* 4 秒同步可能已置換 state，改以 id 定位 */
+    if(live) Object.assign(live, c); else state.cases.push(c);
+  }else{
+    state.cases.push(c);
+  }
+  closeCaseModal();
+  persist(); render();
+  const wd = new Date(c.date + 'T00:00:00').getDay();
+  if((wd === 6 && !state.showSat) || (wd === 0 && !state.showSun)){
+    toast('已儲存，但該日為' + (wd === 6 ? '週六' : '週日') + '，目前檢視未顯示；可至「⚙ 設定」開啟顯示');
+  }
+  return true;
+}
+
+function deleteCase(){
+  if(!editing) return;
+  const hint = editing.cancelledAt ? '' : '\n（若想保留劃線紀錄讓大家知道原本有排，請改用「✂ 取消排程」）';
+  if(!confirm('確定「永久」刪除「' + (editing.name||'') + '」這筆排程？將不留任何紀錄。' + hint)) return;
+  state.cases = state.cases.filter(c => c.id !== editing.id);
+  closeCaseModal();
+  persist(); render();
+}
+
+/* ================= 設定 ================= */
+function openSettings(){
+  $('#s-room0').value = state.roomNames[0];
+  $('#s-room1').value = state.roomNames[1];
+  $('#s-sat').checked = !!state.showSat;
+  $('#s-sun').checked = !!state.showSun;
+  $('#s-procedures').value = state.options.procedures.join('\n');
+  $('#s-physicians').value = state.options.physicians.join('\n');
+  $('#s-beds').value = state.options.beds.join('\n');
+  $('#s-details').value = state.options.details.join('\n');
+  $('#s-fileinfo').textContent = mode === 'file' && fileHandle
+    ? '資料檔：' + fileHandle.name
+    : '資料僅暫存於此瀏覽器（試用模式）';
+  $('#s-changeFile').classList.toggle('hidden', !window.showOpenFilePicker);
+  $('#settingsModal').classList.remove('hidden');
+}
+function saveSettings(){
+  const lines = v => v.split(/\r?\n/).map(x=>x.trim()).filter(Boolean);
+  state.roomNames = [$('#s-room0').value.trim() || '導管室1', $('#s-room1').value.trim() || '導管室2'];
+  state.showSat = $('#s-sat').checked;
+  state.showSun = $('#s-sun').checked;
+  state.options.procedures = lines($('#s-procedures').value);
+  state.options.physicians = lines($('#s-physicians').value);
+  state.options.beds = lines($('#s-beds').value);
+  state.options.details = lines($('#s-details').value);
+  $('#settingsModal').classList.add('hidden');
+  persist(); render();
+}
+
+/* ================= Excel (.xlsx) 匯入 ================= */
+const IMP_FIELDS = [
+  {k:'name',      kw:['姓名']},
+  {k:'chartNo',   kw:['病歷號','病歷']},
+  {k:'birthday',  kw:['生日','出生']},
+  {k:'sex',       kw:['性別']},
+  {k:'procedure', kw:['術式']},
+  {k:'physician', kw:['醫師']},
+  {k:'bed',       kw:['床號','醫院']},
+  {k:'detail',    kw:['細項']},
+  {k:'note',      kw:['備註','備注']},
+];
+const IMP_SLOT_BY_START = {};
+DAY_SLOTS.forEach(s => { if(s[0] !== 'X') IMP_SLOT_BY_START[(+s.slice(0,2)) + ':' + s.slice(2)] = s; });
+const IMP_SEX = {'男':'M','女':'F','M':'M','F':'F','m':'M','f':'F'};
+
+function impParseSlot(v){
+  if(v == null) return null;
+  const s = String(v).replace(/\s+/g,'')
+    .replace(/[〜～]/g,'~').replace(/：/g,':')
+    .replace(/[０-９]/g, d => String.fromCharCode(d.charCodeAt(0) - 0xFEE0));   /* 全形數字轉半形 */
+  const g = s.match(/加台(\d+)/);
+  if(g) return (+g[1] >= 1 && +g[1] <= 4) ? 'X' + g[1] : 'UNKNOWN';
+  const t = s.match(/^(\d{1,2}):(\d{2})(?:[~\-–]|$)/);
+  if(!t) return null;
+  return IMP_SLOT_BY_START[(+t[1]) + ':' + t[2]] || 'UNKNOWN';
+}
+function excelDateToYmdSlash(n){
+  const d = new Date(Math.round((n - 25569) * 86400000));
+  if(isNaN(d)) return '';
+  return d.getUTCFullYear() + '/' + String(d.getUTCMonth()+1).padStart(2,'0') + '/' + String(d.getUTCDate()).padStart(2,'0');
+}
+function impCellStr(v){
+  if(v == null) return '';
+  let s = String(v).trim();
+  if(/^-?\d+(\.\d+)?[eE][+-]?\d+$/.test(s)){ const n = Number(s); if(Number.isFinite(n)) s = String(n); }
+  if(/^-?\d+\.0+$/.test(s)) s = s.replace(/\.0+$/,'');
+  return s;
+}
+function impColOf(ref){   /* 'AB12' → {c:27, r:11}（0 起算） */
+  let c = 0, i = 0;
+  while(i < ref.length && ref[i] >= 'A' && ref[i] <= 'Z'){ c = c * 26 + (ref.charCodeAt(i) - 64); i++; }
+  return {c: c - 1, r: parseInt(ref.slice(i), 10) - 1};
+}
+
+/* 讀取 ZIP（.xlsx 本體是 ZIP 檔）：以中央目錄定位各檔案，deflate 交給瀏覽器解壓 */
+async function impUnzip(buf){
+  const dv = new DataView(buf);
+  let eocd = -1;
+  for(let i = dv.byteLength - 22; i >= Math.max(0, dv.byteLength - 65558); i--){
+    if(dv.getUint32(i, true) === 0x06054b50){ eocd = i; break; }
+  }
+  if(eocd < 0) throw new Error('不是有效的 .xlsx 檔案');
+  const count = dv.getUint16(eocd + 10, true);
+  let off = dv.getUint32(eocd + 16, true);
+  const entries = {};
+  for(let n = 0; n < count; n++){
+    if(dv.getUint32(off, true) !== 0x02014b50) break;
+    const method = dv.getUint16(off + 10, true);
+    const csize = dv.getUint32(off + 20, true);
+    const nameLen = dv.getUint16(off + 28, true);
+    const extraLen = dv.getUint16(off + 30, true);
+    const cmtLen = dv.getUint16(off + 32, true);
+    const lho = dv.getUint32(off + 42, true);
+    const name = new TextDecoder().decode(new Uint8Array(buf, off + 46, nameLen));
+    entries[name] = {method, csize, lho};
+    off += 46 + nameLen + extraLen + cmtLen;
+  }
+  return async function read(name){
+    const e = entries[name]; if(!e) return null;
+    const nl = dv.getUint16(e.lho + 26, true), el = dv.getUint16(e.lho + 28, true);
+    const data = new Uint8Array(buf, e.lho + 30 + nl + el, e.csize);
+    if(e.method === 0) return new TextDecoder().decode(data);
+    if(e.method !== 8) throw new Error('不支援的壓縮格式');
+    if(typeof DecompressionStream === 'undefined') throw new Error('此瀏覽器版本過舊，請更新 Chrome / Edge 後再匯入');
+    return await new Response(new Blob([data]).stream().pipeThrough(new DecompressionStream('deflate-raw'))).text();
+  };
+}
+
+/* 讀取活頁簿：工作表清單、共用字串、儲存格與合併範圍 */
+async function impLoadWorkbook(buf){
+  const read = await impUnzip(buf);
+  const P = s => {
+    const doc = new DOMParser().parseFromString(s, 'application/xml');
+    if(doc.getElementsByTagName('parsererror').length) throw new Error('檔案內容解析失敗');
+    return doc;
+  };
+  const all = (node, tag) => [...node.getElementsByTagName('*')].filter(e => e.localName === tag);
+  const wbXml = await read('xl/workbook.xml');
+  if(!wbXml) throw new Error('檔案中找不到活頁簿，請確認是 .xlsx 格式');
+  const wb = P(wbXml);
+  const relsXml = await read('xl/_rels/workbook.xml.rels');
+  const relMap = {};
+  if(relsXml) all(P(relsXml), 'Relationship').forEach(rel => relMap[rel.getAttribute('Id')] = rel.getAttribute('Target'));
+  let sst = [];
+  const sstXml = await read('xl/sharedStrings.xml');
+  if(sstXml) sst = all(P(sstXml), 'si').map(si => all(si, 't').map(t => t.textContent).join(''));
+  const sheets = all(wb, 'sheet').map((s, i) => {
+    let rid = null;
+    for(const a of s.attributes){ if(a.localName === 'id' && a.name !== 'sheetId') rid = a.value; }
+    let target = (rid && relMap[rid]) || ('worksheets/sheet' + (i + 1) + '.xml');
+    target = target.replace(/^\//, ''); if(!/^xl\//.test(target)) target = 'xl/' + target;
+    return {name: s.getAttribute('name') || ('工作表' + (i + 1)), target};
+  });
+  if(!sheets.length) throw new Error('活頁簿中沒有工作表');
+  async function readSheet(i){
+    const xml = await read(sheets[i].target);
+    if(xml == null) throw new Error('讀不到工作表：' + sheets[i].name);
+    const doc = P(xml);
+    const rows = {};
+    all(doc, 'c').forEach(c => {
+      const ref = c.getAttribute('r'); if(!ref) return;
+      const t = c.getAttribute('t');
+      let v = '';
+      if(t === 'inlineStr'){ v = all(c, 't').map(x => x.textContent).join(''); }
+      else{
+        const vEl = [...c.children].find(x => x.localName === 'v');
+        if(!vEl) return;
+        v = vEl.textContent;
+        if(t === 's') v = sst[+v] ?? '';
+      }
+      if(String(v).trim() === '') return;
+      const p = impColOf(ref);
+      (rows[p.r] = rows[p.r] || {})[p.c] = String(v);
+    });
+    const merges = all(doc, 'mergeCell').map(m => {
+      const [a, b] = (m.getAttribute('ref') || 'A1:A1').split(':');
+      const p1 = impColOf(a), p2 = impColOf(b || a);
+      return {r1: p1.r, c1: p1.c, r2: p2.r, c2: p2.c};
+    });
+    return {rows, merges};
+  }
+  return {sheets, readSheet};
+}
+
+/* 解析他們的排班表格式：日期直排、每日 8:00~17:00＋加台、左右兩室各一組欄位 */
+function parseScheduleGrid(sm, year){
+  const rows = sm.rows, merges = sm.merges || [];
+  const rowIdx = Object.keys(rows).map(Number).sort((a, b) => a - b);
+  const warnings = [];
+  if(!rowIdx.length) throw new Error('工作表是空的');
+  /* 表頭列＝同一列出現兩個「姓名」 */
+  let headerRow = -1, nameCols = [];
+  for(const r of rowIdx){
+    const cols = Object.keys(rows[r]).filter(c => String(rows[r][c]).trim() === '姓名').map(Number).sort((a, b) => a - b);
+    if(cols.length >= 2){ headerRow = r; nameCols = cols; break; }
+  }
+  if(headerRow < 0) throw new Error('找不到表頭：需有一列同時包含左右兩室的「姓名」欄');
+  if(nameCols.length > 2) warnings.push('偵測到超過兩組「姓名」欄，只匯入前兩組');
+  const maxCol = Math.max(...rowIdx.map(r => Math.max(...Object.keys(rows[r]).map(Number))));
+  const groups = [0, 1].map(gi => {
+    const from = nameCols[gi];
+    const to = gi === 0 ? nameCols[1] - 1 : maxCol;
+    const map = {};
+    for(let c = from; c <= to; c++){
+      const label = String(rows[headerRow][c] ?? '').trim();
+      if(!label) continue;
+      const f = IMP_FIELDS.find(x => !(x.k in map) && x.kw.some(kw => label.includes(kw)));
+      if(f) map[f.k] = c;
+    }
+    let roomName = '';
+    outer: for(let up = 1; up <= 3; up++){
+      const rr = rows[headerRow - up]; if(!rr) continue;
+      for(let c = from; c <= to; c++){
+        const v = String(rr[c] ?? '').trim();
+        if(v){ roomName = v; break outer; }
+      }
+    }
+    return {from, to, map, roomName};
+  });
+  /* 時間欄＝表頭左側、時段樣式出現最多次的欄 */
+  let timeCol = -1, best = 0;
+  for(let c = 0; c < nameCols[0]; c++){
+    let n = 0;
+    for(const r of rowIdx){ if(r > headerRow && impParseSlot(rows[r][c])) n++; }
+    if(n > best){ best = n; timeCol = c; }
+  }
+  if(timeCol < 0) throw new Error('找不到時間欄（例如「8:00~ 8:30」或「加台1」）');
+  /* 時段格被直向合併時，展延列各自換算回正確的時段 */
+  const slotAt = {};
+  for(const m of merges){
+    if(m.c1 > timeCol || timeCol > m.c2 || m.r2 <= m.r1) continue;
+    const top = impParseSlot(rows[m.r1] ? rows[m.r1][timeCol] : null);
+    if(!top || top === 'UNKNOWN') continue;
+    const i0 = DAY_SLOTS.indexOf(top);
+    for(let rr = m.r1 + 1; rr <= m.r2; rr++){
+      const s2 = DAY_SLOTS[i0 + (rr - m.r1)];
+      if(s2 && !(rows[rr] && rows[rr][timeCol] != null)) slotAt[rr] = s2;
+    }
+  }
+  /* 逐列解析 */
+  const cases = [];
+  const daysSeen = new Set();
+  let curDay = null, wdMismatch = 0, workYear = +year, lastMo = null;
+  for(const r of rowIdx){
+    if(r <= headerRow) continue;
+    /* 先掃日期標籤（日期合併格的值可能落在每日重複的表頭列上） */
+    let dayText = '';
+    for(let c = 0; c < timeCol; c++){ const v = rows[r][c]; if(v != null) dayText += ' ' + v; }
+    if(dayText.trim()){
+      const wd = (dayText.match(/星期([一二三四五六日])/) || [])[1] || '';
+      let y = null, mo = null, dd = null, mm;
+      if((mm = dayText.match(/(\d{4})\s*[\/.年]\s*(\d{1,2})\s*[\/.月]\s*(\d{1,2})/))){ y = +mm[1]; mo = +mm[2]; dd = +mm[3]; }
+      else if((mm = dayText.match(/(?<!\d)(\d{1,2})\s*\/\s*(\d{1,2})(?!\d)/))){ mo = +mm[1]; dd = +mm[2]; }
+      else if((mm = dayText.match(/(?<!\d)(\d{5})(?!\d)/)) && +mm[1] > 20000 && +mm[1] < 80000){
+        const t = excelDateToYmdSlash(+mm[1]).split('/'); y = +t[0]; mo = +t[1]; dd = +t[2];
+      }
+      if(mo != null){
+        if(y != null) workYear = y;
+        else if(lastMo != null && lastMo >= 11 && mo <= 2) workYear++;   /* 跨年：12月之後接 1月 → 年份自動 +1 */
+        lastMo = mo;
+        const dt0 = new Date(workYear, mo - 1, dd);
+        if(dt0.getMonth() === mo - 1 && dt0.getDate() === dd){
+          curDay = {y: workYear, m: mo, d: dd, wd};
+        }else{
+          warnings.push('第 ' + (r + 1) + ' 列的日期「' + mo + '/' + dd + '」不存在，該日排程未匯入');
+          curDay = null;
+        }
+      }
+    }
+    if(String(rows[r][nameCols[0]] ?? '').trim() === '姓名') continue;   /* 每日重複的表頭 */
+    let slot = impParseSlot(rows[r][timeCol]);
+    if(!slot && slotAt[r]) slot = slotAt[r];
+    for(let gi = 0; gi < 2; gi++){
+      const g = groups[gi];
+      const gv = k => g.map[k] != null ? impCellStr(rows[r][g.map[k]]) : '';
+      const name = gv('name');
+      const roomLabel = g.roomName || ('第' + (gi + 1) + '室');
+      if(!name){
+        if(slot && slot !== 'UNKNOWN' && ['chartNo','procedure','physician','note'].some(k => gv(k)))
+          warnings.push('第 ' + (r + 1) + ' 列（' + roomLabel + '）有資料但沒有姓名，未匯入');
+        continue;
+      }
+      if(name === g.roomName && !slot) continue;   /* 每日重複的導管室名稱列（無時段標籤）；有時段的同名視為真病人 */
+      if(!slot){ warnings.push('第 ' + (r + 1) + ' 列（' + roomLabel + '）「' + name + '」的時段格空白或無法辨識，未匯入'); continue; }
+      if(slot === 'UNKNOWN'){ warnings.push('第 ' + (r + 1) + ' 列「' + name + '」的時段「' + impCellStr(rows[r][timeCol]) + '」無法對應（僅支援 8:00-12:00、13:00-17:00 各半小時與加台1-4），未匯入'); continue; }
+      if(!curDay){ warnings.push('第 ' + (r + 1) + ' 列「' + name + '」找不到所屬日期，未匯入'); continue; }
+      const dt = new Date(curDay.y, curDay.m - 1, curDay.d);
+      const dateKey = ymd(dt);
+      daysSeen.add(dateKey);
+      if(curDay.wd && WEEKNAMES[dt.getDay()] !== '星期' + curDay.wd) wdMismatch++;
+      let span = 1;
+      const nc = g.map.name;
+      const mg = merges.find(m => m.r1 === r && m.r2 > m.r1 && m.c1 <= nc && nc <= m.c2);
+      if(mg){
+        const want = mg.r2 - mg.r1 + 1;
+        span = Math.min(want, maxSpan(slot));
+        if(want > span) warnings.push('「' + name + '」（' + dateKey + ' ' + slotLabel(slot) + '）的合併範圍跨越午休或加台，已縮短為 ' + spanLabel(span) + '，請確認其餘時段是否需另行排程');
+      }
+      let birthday = gv('birthday');
+      if(/^\d+(\.\d+)?$/.test(birthday)){ const n = +birthday; if(n > 3000 && n < 80000) birthday = excelDateToYmdSlash(n); }
+      const sexRaw = gv('sex');
+      cases.push({
+        id: uid(), date: dateKey, room: gi, slot, span,
+        name, chartNo: gv('chartNo'), birthday,
+        sex: IMP_SEX[sexRaw] || sexRaw,
+        procedure: gv('procedure'), physician: gv('physician'),
+        bed: gv('bed'), detail: gv('detail'), note: gv('note'),
+        startedAt: '', endedAt: '', cancelledAt: '',
+      });
+    }
+  }
+  if(wdMismatch) warnings.unshift('注意：有 ' + wdMismatch + ' 筆的星期與換算出的日期對不上，請確認「年份」是否正確');
+  return {cases, warnings, days: daysSeen.size, roomNames: groups.map(g => g.roomName)};
+}
+
+/* --- 匯入精靈 --- */
+let impWb = null, impParsed = null;
+function openImportModal(){
+  impWb = null; impParsed = null;
+  $('#imp-fname').textContent = '';
+  $('#imp-sheet').innerHTML = ''; $('#imp-sheet').disabled = true;
+  const yy = new Date().getFullYear();
+  $('#imp-year').innerHTML = [yy - 2, yy - 1, yy, yy + 1].map(y => `<option value="${y}"${y === yy ? ' selected' : ''}>${y}</option>`).join('');
+  $('#imp-summary').innerHTML = ''; $('#imp-warnings').innerHTML = ''; $('#imp-preview').innerHTML = '';
+  $('#imp-confirm').disabled = true; $('#imp-confirm').textContent = '匯入';
+  $('#importModal').classList.remove('hidden');
+}
+async function impReparse(){
+  if(!impWb) return;
+  impParsed = null;
+  $('#imp-confirm').disabled = true;
+  try{
+    const sm = await impWb.readSheet(+$('#imp-sheet').value || 0);
+    impParsed = parseScheduleGrid(sm, +$('#imp-year').value);
+    renderImpPreview(impParsed);
+  }catch(err){
+    $('#imp-summary').innerHTML = `<div class="imp-error">${esc(err.message)}</div>`;
+    $('#imp-warnings').innerHTML = ''; $('#imp-preview').innerHTML = '';
+  }
+}
+/* 逐筆比對現有排程：將匯入 / 重複略過 / 時段衝突略過（含本次匯入彼此間的衝突） */
+function impEvaluate(parsedCases){
+  /* 佔格判定只看未取消的排程；重複判定含已取消（避免匯入時讓被劃線取消的病人復活） */
+  const virtual = state.cases.filter(o => !o.cancelledAt).map(o => ({date:o.date, room:o.room, slot:o.slot, span:o.span, name:o.name}));
+  const sameKey = (o, pc) => o.date === pc.date && o.room === pc.room && o.slot === pc.slot && o.name === pc.name;
+  return parsedCases.map(pc => {
+    const dupHit = state.cases.find(o => sameKey(o, pc));
+    if(dupHit || virtual.some(o => sameKey(o, pc)))
+      return {c: pc, status: 'dup', wasCancelled: !!(dupHit && dupHit.cancelledAt)};
+    const [a1, a2] = rangeOf(pc);
+    const clash = virtual.find(o => {
+      if(o.date !== pc.date || o.room !== pc.room) return false;
+      const [b1, b2] = rangeOf(o);
+      return a1 <= b2 && b1 <= a2;
+    });
+    if(clash) return {c: pc, status: 'conflict', clashName: clash.name};
+    virtual.push({date: pc.date, room: pc.room, slot: pc.slot, span: pc.span, name: pc.name});
+    const sameName = state.cases.some(o => o.date === pc.date && o.name === pc.name && (o.room !== pc.room || o.slot !== pc.slot));
+    return {c: pc, status: 'add', sameName};
+  });
+}
+
+function renderImpPreview(p){
+  const ev = impEvaluate(p.cases);
+  const nAdd = ev.filter(e => e.status === 'add').length;
+  const nDup = ev.filter(e => e.status === 'dup').length;
+  const nCon = ev.filter(e => e.status === 'conflict').length;
+  $('#imp-summary').innerHTML = `<div class="imp-ok">偵測到 <b>${p.days}</b> 天、<b>${p.cases.length}</b> 筆：將匯入 <b>${nAdd}</b> 筆${nDup ? '、重複略過 ' + nDup + ' 筆' : ''}${nCon ? '、<span class="st-con">時段衝突略過 ' + nCon + ' 筆</span>' : ''}　（Excel 左側「${esc(p.roomNames[0] || '?')}」→ ${esc(state.roomNames[0])}；右側「${esc(p.roomNames[1] || '?')}」→ ${esc(state.roomNames[1])}）</div>`;
+  $('#imp-warnings').innerHTML = p.warnings.length ? `<div class="imp-warn">${p.warnings.map(w => '⚠ ' + esc(w)).join('<br>')}</div>` : '';
+  const LIMIT = 300;
+  const trs = ev.slice(0, LIMIT).map(e => {
+    const c = e.c;
+    const st = e.status === 'add'
+      ? '<span class="st-add">將匯入</span>' + (e.sameName ? ' <span class="st-note">⚠同日已有同名</span>' : '')
+      : e.status === 'dup' ? (e.wasCancelled
+          ? '<span class="st-note">已在系統中劃線取消，略過（要恢復請點格中劃線名字復原）</span>'
+          : '<span class="st-dup">重複，略過</span>')
+      : `<span class="st-con">衝突，略過（已排「${esc(e.clashName)}」）</span>`;
+    return `<tr>
+    <td>${st}</td>
+    <td>${c.date}（${WEEKNAMES[new Date(c.date + 'T00:00:00').getDay()].slice(2)}）</td>
+    <td>${slotLabel(c.slot)}${c.span > 1 ? ' ×' + c.span : ''}</td>
+    <td>${esc(state.roomNames[c.room])}</td>
+    <td>${esc(c.name)}</td><td>${esc(c.chartNo)}</td><td>${esc(c.birthday)}</td><td>${esc(c.sex)}</td>
+    <td>${esc(c.procedure)}</td><td>${esc(c.physician)}</td><td>${esc(c.bed)}</td><td>${esc(c.detail)}</td><td>${esc(c.note)}</td>
+  </tr>`;
+  }).join('');
+  $('#imp-preview').innerHTML = p.cases.length ? `<table class="imp-table"><thead><tr>
+    <th>狀態</th><th>日期</th><th>時段</th><th>導管室</th><th>姓名</th><th>病歷號</th><th>生日</th><th>性別</th><th>術式</th><th>醫師</th><th>床號/醫院</th><th>細項</th><th>備註</th>
+  </tr></thead><tbody>${trs}</tbody></table>${ev.length > LIMIT ? `<div class="imp-more">…僅預覽前 ${LIMIT} 筆，實際處理全部 ${ev.length} 筆</div>` : ''}`
+  : '<div class="imp-warn">沒有解析到任何排程資料</div>';
+  $('#imp-confirm').disabled = nAdd === 0;
+  $('#imp-confirm').textContent = nAdd ? '匯入 ' + nAdd + ' 筆' : '匯入';
+}
+
+$('#btnImportXlsx').onclick = openImportModal;
+$('#imp-pick').onclick = () => $('#imp-file').click();
+$('#imp-file').onchange = async e => {
+  const f = e.target.files[0]; if(!f) return;
+  try{
+    const buf = await f.arrayBuffer();
+    impWb = await impLoadWorkbook(buf);
+    $('#imp-fname').textContent = f.name;
+    $('#imp-sheet').innerHTML = impWb.sheets.map((s, i) => `<option value="${i}">${esc(s.name)}</option>`).join('');
+    $('#imp-sheet').disabled = impWb.sheets.length <= 1;
+    await impReparse();
+  }catch(err){
+    impWb = null; impParsed = null;
+    $('#imp-summary').innerHTML = `<div class="imp-error">讀取失敗：${esc(err.message)}</div>`;
+    $('#imp-warnings').innerHTML = ''; $('#imp-preview').innerHTML = '';
+    $('#imp-confirm').disabled = true;
+  }
+  e.target.value = '';
+};
+$('#imp-sheet').onchange = impReparse;
+$('#imp-year').onchange = impReparse;
+$('#imp-cancel').onclick = () => $('#importModal').classList.add('hidden');
+$('#imp-confirm').onclick = async () => {
+  if(!impParsed || !impParsed.cases.length) return;
+  const ev = impEvaluate(impParsed.cases);   /* 以當下最新的排程重新比對 */
+  const adds = ev.filter(e => e.status === 'add').map(e => e.c);
+  const dup = ev.filter(e => e.status === 'dup').length;
+  const conflict = ev.filter(e => e.status === 'conflict').length;
+  if(!adds.length){ toast('沒有可匯入的新排程' + (dup || conflict ? '（重複 ' + dup + '、衝突 ' + conflict + '）' : '')); return; }
+  let firstDate = null, hiddenDay = 0;
+  for(const pc of adds){
+    state.cases.push(pc);
+    learnOption('procedures', pc.procedure);
+    learnOption('physicians', pc.physician);
+    learnOption('beds', pc.bed);
+    learnOption('details', pc.detail);
+    if(!firstDate || pc.date < firstDate) firstDate = pc.date;
+    const wd = new Date(pc.date + 'T00:00:00').getDay();
+    if((wd === 6 && !state.showSat) || (wd === 0 && !state.showSun)) hiddenDay++;
+  }
+  $('#importModal').classList.add('hidden');
+  if(firstDate){ weekStart = mondayOf(new Date(firstDate + 'T00:00:00')); $('#jumpDate').value = firstDate; }
+  const ok = await persist();
+  render();
+  if(!ok){
+    toast('⚠ 已匯入 ' + adds.length + ' 筆，但寫入資料檔失敗！請先別關閉視窗，修正資料檔連線後任意儲存一筆即可重寫');
+    return;
+  }
+  toast('已匯入 ' + adds.length + ' 筆'
+    + (dup ? '，略過重複 ' + dup + ' 筆' : '')
+    + (conflict ? '，略過時段衝突 ' + conflict + ' 筆' : '')
+    + (hiddenDay ? '；其中 ' + hiddenDay + ' 筆在未顯示的週六/週日（可至「⚙ 設定」開啟顯示）' : ''));
+};
+
+/* ================= 資料檔（File System Access API） ================= */
+const PICKER_TYPES = [{description:'排程資料 (JSON)', accept:{'application/json':['.json']}}];
+
+async function useHandle(h){
+  const f = await h.getFile();
+  const txt = await f.text();
+  state = txt.trim() ? parseAppData(txt) : defaultState();
+  fileHandle = h; mode = 'file'; lastMod = f.lastModified;
+  $('#startOverlay').classList.add('hidden');
+  $('#banner').classList.add('hidden');
+  render();
+  setStatus('✔ 已連線：' + h.name);
+  if(!txt.trim()) await persist();
+}
+
+async function createDataFile(){
+  try{
+    const h = await showSaveFilePicker({suggestedName:'心導管排程資料.json', types:PICKER_TYPES});
+    /* 若選到的是既有的排程資料檔：直接連線使用，絕不覆蓋內容 */
+    let existing = '';
+    try{ existing = await (await h.getFile()).text(); }catch(e){}
+    if(existing.trim()){
+      let isAppFile = false;
+      try{ parseAppData(existing); isAppFile = true; }catch(e){}
+      if(isAppFile){
+        await useHandle(h);
+        try{ await idbSet('handle', h); }catch(e){}
+        toast('這個檔案已是排程資料檔，已直接連線使用（內容未被覆蓋）');
+        return;
+      }
+      if(!confirm('選擇的檔案已有其他內容，確定要覆蓋成全新的排程資料檔？\n（原內容將遺失）')) return;
+    }
+    /* 若本機留有試用模式輸入的排程，詢問是否帶入新資料檔 */
+    let seed = defaultState(), seededFromTrial = false;
+    try{
+      const saved = localStorage.getItem('cathlab-trial');
+      if(saved){
+        const prev = migrate(JSON.parse(saved));
+        if(prev.cases.length && confirm('偵測到先前在此瀏覽器暫存的排程資料（' + prev.cases.length + ' 筆）。\n「確定」＝帶入新資料檔　「取消」＝建立空白資料檔')){ seed = prev; seededFromTrial = true; }
+      }
+    }catch(e){}
+    state = seed;
+    fileHandle = h; mode = 'file';
+    const ok = await persist();
+    if(ok && seededFromTrial){ try{ localStorage.removeItem('cathlab-trial'); }catch(e){} }
+    try{ await idbSet('handle', h); }catch(e){}
+    $('#startOverlay').classList.add('hidden');
+    $('#banner').classList.add('hidden');
+    render();
+    setStatus(ok ? '✔ 已建立：' + h.name : '⚠ 已建立檔案，但首次儲存失敗，請按任一格重試');
+  }catch(e){ if(e.name !== 'AbortError') toast('無法建立資料檔：' + e.message); }
+}
+
+async function openDataFile(){
+  try{
+    const [h] = await showOpenFilePicker({types:PICKER_TYPES});
+    const p = await h.requestPermission({mode:'readwrite'});
+    if(p !== 'granted') toast('未取得寫入權限，變更將無法存回檔案');
+    await useHandle(h);   /* 先驗證檔案內容，成功連線後才記住，避免壞檔覆蓋原本記住的資料檔 */
+    try{ await idbSet('handle', h); }catch(e){}
+  }catch(e){ if(e.name !== 'AbortError') toast('無法開啟資料檔：' + e.message); }
+}
+
+async function reconnect(){
+  if(!pendingHandle) return;
+  try{
+    const p = await pendingHandle.requestPermission({mode:'readwrite'});
+    if(p !== 'granted'){ toast('未取得權限，請改用「開啟現有資料檔」'); return; }
+    await useHandle(pendingHandle);
+  }catch(e){ toast('連線失敗：' + e.message); }
+}
+
+function startTrial(){
+  mode = 'local';
+  try{
+    const saved = localStorage.getItem('cathlab-trial');
+    if(saved) state = migrate(JSON.parse(saved));
+  }catch(e){}
+  $('#startOverlay').classList.add('hidden');
+  $('#banner').textContent = '試用模式：資料只儲存在此瀏覽器，不會同步到 Dropbox。要正式使用，請重新整理頁面並選擇「建立新資料檔」。';
+  $('#banner').classList.remove('hidden');
+  render();
+  setStatus('試用模式');
+}
+
+function exportBackup(){
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(new Blob([JSON.stringify(state,null,1)], {type:'application/json'}));
+  a.download = '心導管排程備份-' + ymd(new Date()).replaceAll('-','') + '.json';
+  a.click();
+  URL.revokeObjectURL(a.href);
+}
+
+/* ================= 事件 ================= */
+$('#grid').addEventListener('click', e => {
+  const cx = e.target.closest('span.cxl');   /* 劃線的已取消排程：點擊檢視/復原 */
+  if(cx){ const c = state.cases.find(x => x.id === cx.dataset.cxlId); if(c) openCaseModal(c); return; }
+  const f = e.target.closest('td.filled');
+  if(f){ const c = state.cases.find(x => x.id === f.dataset.id); if(c) openCaseModal(c); return; }
+  const t = e.target.closest('td.empty');
+  if(t) openCaseModal(null, t.dataset);
+});
+
+$('#prevWeek').onclick = () => { weekStart = addDays(weekStart,-7); $('#jumpDate').value = ymd(weekStart); render(); };
+$('#nextWeek').onclick = () => { weekStart = addDays(weekStart, 7); $('#jumpDate').value = ymd(weekStart); render(); };
+$('#thisWeek').onclick = () => { weekStart = mondayOf(new Date()); $('#jumpDate').value = ymd(new Date()); render(); };
+$('#jumpDate').onchange = e => { if(e.target.value){ weekStart = mondayOf(new Date(e.target.value+'T00:00:00')); render(); } };
+$('#btnPrint').onclick = () => window.print();
+$('#btnSettings').onclick = openSettings;
+$('#btnShare').onclick = async () => {
+  const msg = '心導管室排程系統\n請用 Chrome 或 Edge 開啟 Dropbox 資料夾「心導管排程」裡的 index.html\n本機路徑參考：' + decodeURIComponent(location.href);
+  try{
+    await navigator.clipboard.writeText(msg);
+    toast('已複製分享訊息，可直接貼給同事');
+  }catch(e){
+    const ta = document.createElement('textarea');
+    ta.value = msg; document.body.appendChild(ta); ta.select();
+    let ok = false;
+    try{ ok = document.execCommand('copy'); }catch(e2){}
+    ta.remove();
+    if(ok) toast('已複製分享訊息，可直接貼給同事');
+    else prompt('自動複製失敗，請手動複製以下內容：', msg);
+  }
+};
+
+$('#f-slot').onchange = () => refreshSpanSelect();
+$('#f-start').onclick = () => {
+  if(opStart && !confirm('已記錄開始時間 ' + fmtT(opStart) + '，要改為現在嗎？')) return;
+  opStart = new Date().toISOString();
+  if(opEnd && opEnd < opStart && confirm('原本的結束時間（' + fmtT(opEnd) + '）早於新的開始時間，要一併清除結束時間嗎？')) opEnd = '';
+  renderOpUI();
+  saveCase();
+};
+$('#f-end').onclick = () => {
+  if(!opStart && !confirm('尚未記錄手術開始時間，仍要直接記錄結束時間嗎？')) return;
+  if(opEnd && !confirm('已記錄結束時間 ' + fmtT(opEnd) + '，要改為現在嗎？')) return;
+  const now = new Date().toISOString();
+  if(opStart && now < opStart && !confirm('現在時間早於已記錄的開始時間（' + fmtT(opStart) + '），仍要記錄結束嗎？')) return;
+  opEnd = now;
+  renderOpUI();
+  saveCase();
+};
+$('#f-start-clear').onclick = () => { if(confirm('確定清除手術開始時間？')){ opStart = ''; renderOpUI(); saveCase(); } };
+$('#f-end-clear').onclick = () => { if(confirm('確定清除手術結束時間？')){ opEnd = ''; renderOpUI(); saveCase(); } };
+$('#f-save').onclick = saveCase;
+$('#f-cancel').onclick = closeCaseModal;
+$('#f-delete').onclick = deleteCase;
+$('#f-cancelCase').onclick = () => {
+  if(!editing) return;
+  if(cxlDraft){   /* 復原：需通過時段衝突檢查 */
+    const prev = cxlDraft;
+    cxlDraft = '';
+    if(saveCase() === false){ cxlDraft = prev; updateCxlUI(); }
+  }else{
+    if(!confirm('將「' + $('#f-name').value.trim() + '」劃線取消？\n仍會保留在原格（劃線顯示），時段可再排別人，之後也可復原。')) return;
+    cxlDraft = new Date().toISOString();
+    if(saveCase() === false){ cxlDraft = ''; updateCxlUI(); }
+  }
+};
+$('#caseModal').addEventListener('keydown', e => {
+  if(e.key !== 'Enter' || e.isComposing) return;   /* 中文輸入法選字的 Enter 不觸發儲存 */
+  const t = e.target;
+  if(t.tagName === 'BUTTON' || t.tagName === 'TEXTAREA') return;   /* 按鈕維持原本的 Enter 行為 */
+  if(t.tagName === 'INPUT' && t.hasAttribute('list')) return;      /* datalist 以 Enter 選取建議，不觸發儲存 */
+  e.preventDefault(); saveCase();
+});
+
+$('#s-save').onclick = saveSettings;
+$('#s-cancel').onclick = () => $('#settingsModal').classList.add('hidden');
+$('#s-export').onclick = exportBackup;
+$('#s-changeFile').onclick = () => { $('#settingsModal').classList.add('hidden'); openDataFile(); };
+$('#s-import').onclick = () => $('#s-importFile').click();
+$('#s-importFile').onchange = async e => {
+  const f = e.target.files[0]; if(!f) return;
+  try{
+    const incoming = parseAppData(await f.text());
+    if(!confirm('匯入將以備份內容覆蓋目前全部排程：\n目前 ' + state.cases.length + ' 筆 → 匯入後 ' + incoming.cases.length + ' 筆\n確定要匯入？')){ e.target.value = ''; return; }
+    state = incoming;
+    $('#settingsModal').classList.add('hidden');
+    await persist(); render();
+    toast('已匯入資料');
+  }catch(err){ alert('匯入失敗：' + err.message); }
+  e.target.value = '';
+};
+
+$('#st-create').onclick = createDataFile;
+$('#st-open').onclick = openDataFile;
+$('#st-trial').onclick = startTrial;
+$('#st-reconnect').onclick = reconnect;
+
+document.addEventListener('keydown', e => {
+  if(e.key === 'Escape'){
+    if(!$('#caseModal').classList.contains('hidden')) closeCaseModal();
+    else if(!$('#settingsModal').classList.contains('hidden')) $('#settingsModal').classList.add('hidden');
+    else if(!$('#importModal').classList.contains('hidden')) $('#importModal').classList.add('hidden');
+  }
+});
+
+/* ================= 啟動 ================= */
+(async function boot(){
+  $('#jumpDate').value = ymd(new Date());
+  render();
+  if(!window.showOpenFilePicker){
+    $('#st-create').disabled = true;
+    $('#st-open').disabled = true;
+    $('#st-hint').textContent = '此瀏覽器不支援直接讀寫檔案，請改用 Chrome 或 Edge 開啟本頁，才能將資料儲存到 Dropbox。';
+    return;
+  }
+  try{
+    const h = await idbGet('handle');
+    if(h){
+      pendingHandle = h;
+      $('#st-fname').textContent = h.name;
+      $('#st-reconnect').classList.remove('hidden');
+      const p = await h.queryPermission({mode:'readwrite'});
+      if(p === 'granted'){ await useHandle(h); return; }
+      $('#st-hint').textContent = '瀏覽器需要您點一下按鈕，重新授權存取上次的資料檔。';
+    }
+  }catch(e){
+    $('#st-hint').textContent = '無法自動連線上次的資料檔（' + ((e && e.message) || e) + '），請重新選擇。';
+  }
+})();
+</script>
+</body>
+</html>
