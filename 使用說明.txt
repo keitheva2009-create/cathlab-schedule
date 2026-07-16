@@ -5,6 +5,14 @@
 - 請使用 Chrome 或 Edge 瀏覽器開啟（需要「檔案直接讀寫」功能）。
 - 本資料夾放在 Dropbox 內，資料檔會自動同步到所有安裝 Dropbox 的電腦。
 
+【最快的開啟方式（網頁版）】
+- 直接點這個網址即可開啟程式：
+  https://keitheva2009-create.github.io/cathlab-schedule/
+- 程式碼由 GitHub 提供，但「排程資料」仍只存在 Dropbox 的資料檔中；
+  第一次開啟請點「開啟現有資料檔…」選擇 Dropbox 資料夾裡的
+  「心導管排程資料.json」（之後會自動記住）。
+- 沒加入 Dropbox 共享資料夾的人打開網址只會看到空白排程，看不到任何資料。
+
 【第一次使用】
 1. 用滑鼠雙擊 index.html，以 Chrome 或 Edge 開啟。
 2. 點「建立新資料檔…」，把資料檔存在本資料夾內
