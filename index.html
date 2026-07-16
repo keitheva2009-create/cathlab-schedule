@@ -191,6 +191,13 @@ td.filled.done{background:#eef6ee}
 #startButtons button.primary{background:#1a56a8; border-color:#1a56a8; color:#fff}
 #startButtons button.minor{font-size:12.5px; color:#777; border-style:dashed}
 #st-hint{font-size:12px; color:#999}
+#startOverlay .hint{font-size:12px; color:#999; margin:2px 0 0}
+.st-cloud-title{font-weight:bold; color:#1a56a8; margin:0 0 6px; font-size:13.5px}
+.st-cloud{display:flex; gap:8px; margin:6px 0}
+.st-cloud input{flex:1; padding:8px 10px; border:1px solid #bbb; border-radius:8px; font-family:inherit; font-size:13px}
+.st-cloud button{padding:8px 18px; border:1px solid #1a56a8; background:#1a56a8; color:#fff; border-radius:8px; cursor:pointer; font-family:inherit}
+.st-cloud button:hover{background:#164a92}
+.st-divider{color:#aaa; font-size:12px; margin:14px 0 2px}
 
 /* ---------- toast ---------- */
 #toast{
@@ -287,6 +294,13 @@ td.filled.done{background:#eef6ee}
       <label class="half">床號/醫院選單（每行一項）<textarea id="s-beds" rows="7"></textarea></label>
       <label class="half">細項選單（每行一項）<textarea id="s-details" rows="7"></textarea></label>
     </div>
+    <div class="data-tools hidden" id="cloud-tools">
+      <span id="cloud-info"></span>
+      <button id="cloud-enable">☁ 啟用雲端資料庫…</button>
+      <button id="cloud-copykey" class="hidden">複製團隊金鑰</button>
+      <button id="cloud-backupdir" class="hidden">設定每日備份資料夾…</button>
+      <button id="cloud-leave" class="hidden">離開雲端（改用資料檔）</button>
+    </div>
     <div class="data-tools">
       <span id="s-fileinfo"></span>
       <button id="s-changeFile">更換資料檔…</button>
@@ -330,6 +344,15 @@ td.filled.done{background:#eef6ee}
 <div class="overlay" id="startOverlay">
   <div class="dialog">
     <h2>心導管室排程系統</h2>
+    <div id="st-cloud-section" class="hidden">
+      <p class="st-cloud-title">☁ 雲端資料庫：輸入團隊金鑰即可共用排程</p>
+      <div class="st-cloud">
+        <input id="st-key" placeholder="貼上 48 碼團隊金鑰" autocomplete="off" spellcheck="false">
+        <button id="st-cloud-connect">連線</button>
+      </div>
+      <p class="hint">金鑰請向排程負責人索取（負責人可在「⚙ 設定」啟用雲端並產生金鑰）</p>
+      <div class="st-divider">─────　或使用本機資料檔　─────</div>
+    </div>
     <p>請選擇排程資料檔。建議將資料檔存放在<b>本資料夾（Dropbox）內</b>，<br>即可透過 Dropbox 在多台電腦之間同步。</p>
     <div id="startButtons">
       <button id="st-reconnect" class="primary hidden">重新連線資料檔：<span id="st-fname"></span></button>
@@ -369,6 +392,16 @@ const COLS = [
 ];
 const W_DAY = 64, W_TIME = 88;
 const TABLE_W = W_DAY + W_TIME + 2 * COLS.reduce((s,c)=>s+c.w,0);
+
+/* 雲端資料庫設定（Firebase Web 設定為公開資訊，非機密；存取權由團隊金鑰＋安全規則控管） */
+const FIREBASE_CONFIG = {
+  apiKey: 'AIzaSyDfemQi7bwLvkLvN7x42mGwKIKcMBOIVr0',
+  authDomain: 'cathlab-sched-rhsbp.firebaseapp.com',
+  projectId: 'cathlab-sched-rhsbp',
+  storageBucket: 'cathlab-sched-rhsbp.firebasestorage.app',
+  messagingSenderId: '1203251370',
+  appId: '1:1203251370:web:f256ed289dcf5d132e88d3',
+}; /*FIREBASE_CONFIG*/
 
 function defaultState(){
   return {
@@ -740,8 +773,10 @@ function openCaseModal(caseObj, preset){
 function closeCaseModal(){ $('#caseModal').classList.add('hidden'); editing = null; }
 
 function learnOption(list, val){
-  if(!val) return;
-  if(!state.options[list].includes(val)) state.options[list].push(val);
+  if(!val) return false;
+  if(state.options[list].includes(val)) return false;
+  state.options[list].push(val);
+  return true;
 }
 
 function saveCase(){
@@ -776,18 +811,22 @@ function saveCase(){
     });
     if(clash){ alert('時段衝突：該時段已排「' + clash.name + '」（' + slotLabel(clash.slot) + '）'); return false; }
   }
-  learnOption('procedures', c.procedure);
-  learnOption('physicians', c.physician);
-  learnOption('beds', c.bed);
-  learnOption('details', c.detail);
+  const learned = [
+    learnOption('procedures', c.procedure),
+    learnOption('physicians', c.physician),
+    learnOption('beds', c.bed),
+    learnOption('details', c.detail),
+  ].some(Boolean);
   if(editing){
-    const live = state.cases.find(x => x.id === editing.id);   /* 4 秒同步可能已置換 state，改以 id 定位 */
+    const live = state.cases.find(x => x.id === editing.id);   /* 同步可能已置換 state，改以 id 定位 */
     if(live) Object.assign(live, c); else state.cases.push(c);
   }else{
     state.cases.push(c);
   }
   closeCaseModal();
-  persist(); render();
+  if(mode === 'cloud'){ cloudWriteCase(c); if(learned) cloudWriteMeta(); }
+  else persist();
+  render();
   const wd = new Date(c.date + 'T00:00:00').getDay();
   if((wd === 6 && !state.showSat) || (wd === 0 && !state.showSun)){
     toast('已儲存，但該日為' + (wd === 6 ? '週六' : '週日') + '，目前檢視未顯示；可至「⚙ 設定」開啟顯示');
@@ -799,9 +838,12 @@ function deleteCase(){
   if(!editing) return;
   const hint = editing.cancelledAt ? '' : '\n（若想保留劃線紀錄讓大家知道原本有排，請改用「✂ 取消排程」）';
   if(!confirm('確定「永久」刪除「' + (editing.name||'') + '」這筆排程？將不留任何紀錄。' + hint)) return;
-  state.cases = state.cases.filter(c => c.id !== editing.id);
+  const delId = editing.id;
+  state.cases = state.cases.filter(c => c.id !== delId);
   closeCaseModal();
-  persist(); render();
+  if(mode === 'cloud') cloudDeleteCase(delId);
+  else persist();
+  render();
 }
 
 /* ================= 設定 ================= */
@@ -814,10 +856,20 @@ function openSettings(){
   $('#s-physicians').value = state.options.physicians.join('\n');
   $('#s-beds').value = state.options.beds.join('\n');
   $('#s-details').value = state.options.details.join('\n');
-  $('#s-fileinfo').textContent = mode === 'file' && fileHandle
-    ? '資料檔：' + fileHandle.name
-    : '資料僅暫存於此瀏覽器（試用模式）';
-  $('#s-changeFile').classList.toggle('hidden', !window.showOpenFilePicker);
+  $('#s-fileinfo').textContent = mode === 'cloud'
+    ? '資料來源：☁ 雲端資料庫'
+    : (mode === 'file' && fileHandle ? '資料檔：' + fileHandle.name : '資料僅暫存於此瀏覽器（試用模式）');
+  $('#s-changeFile').classList.toggle('hidden', !window.showOpenFilePicker || mode === 'cloud');
+  /* 雲端資料庫區塊 */
+  $('#cloud-tools').classList.toggle('hidden', !cloudAvailable());
+  if(cloudAvailable()){
+    const isCloud = mode === 'cloud' && cloud;
+    $('#cloud-info').textContent = isCloud ? ('☁ 已連線雲端（金鑰末 6 碼：' + cloud.key.slice(-6) + '）') : '雲端資料庫：未連線';
+    $('#cloud-enable').classList.toggle('hidden', !!isCloud);
+    $('#cloud-copykey').classList.toggle('hidden', !isCloud);
+    $('#cloud-backupdir').classList.toggle('hidden', !isCloud);
+    $('#cloud-leave').classList.toggle('hidden', !isCloud);
+  }
   $('#settingsModal').classList.remove('hidden');
 }
 function saveSettings(){
@@ -830,7 +882,9 @@ function saveSettings(){
   state.options.beds = lines($('#s-beds').value);
   state.options.details = lines($('#s-details').value);
   $('#settingsModal').classList.add('hidden');
-  persist(); render();
+  if(mode === 'cloud') cloudWriteMeta();
+  else persist();
+  render();
 }
 
 /* ================= Excel (.xlsx) 匯入 ================= */
@@ -1221,10 +1275,16 @@ $('#imp-confirm').onclick = async () => {
   }
   $('#importModal').classList.add('hidden');
   if(firstDate){ weekStart = mondayOf(new Date(firstDate + 'T00:00:00')); $('#jumpDate').value = firstDate; }
-  const ok = await persist();
+  let ok;
+  if(mode === 'cloud'){
+    try{ await cloudImportCases(adds); cloudWriteMeta(); ok = true; }
+    catch(e){ ok = false; toast('雲端寫入失敗：' + e.message); }
+  }else{
+    ok = await persist();
+  }
   render();
   if(!ok){
-    toast('⚠ 已匯入 ' + adds.length + ' 筆，但寫入資料檔失敗！請先別關閉視窗，修正資料檔連線後任意儲存一筆即可重寫');
+    toast('⚠ 已匯入 ' + adds.length + ' 筆，但寫入失敗！請先別關閉視窗，恢復連線後任意儲存一筆即可重寫');
     return;
   }
   toast('已匯入 ' + adds.length + ' 筆'
@@ -1232,6 +1292,160 @@ $('#imp-confirm').onclick = async () => {
     + (conflict ? '，略過時段衝突 ' + conflict + ' 筆' : '')
     + (hiddenDay ? '；其中 ' + hiddenDay + ' 筆在未顯示的週六/週日（可至「⚙ 設定」開啟顯示）' : ''));
 };
+
+/* ================= 雲端資料庫（Firebase Firestore） ================= */
+let cloud = null;             /* {fsM, db, key, unsubs:[]} 連線後才有值 */
+let backupDirHandle;          /* 每日備份資料夾 handle（undefined=尚未載入, null=未設定） */
+
+function cloudAvailable(){ return !!FIREBASE_CONFIG; }
+
+function newTeamKey(){
+  const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789';
+  const a = new Uint32Array(48);
+  crypto.getRandomValues(a);
+  return [...a].map(x => chars[x % chars.length]).join('');
+}
+
+function loadFirebase(){
+  if(!loadFirebase._p){
+    loadFirebase._p = Promise.all([
+      import('https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js'),
+      import('https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js'),
+    ]).then(([appM, fsM]) => ({appM, fsM}));
+  }
+  return loadFirebase._p;
+}
+
+function cloudMetaFromState(){
+  return {
+    app: 'cathlab-schedule', version: 2,
+    roomNames: state.roomNames,
+    showSat: !!state.showSat, showSun: !!state.showSun,
+    options: state.options,
+    updatedAt: new Date().toISOString(),
+  };
+}
+function applyCloudMeta(m){
+  const merged = migrate(Object.assign({}, m, {cases: []}));
+  state.roomNames = merged.roomNames;
+  state.showSat = merged.showSat;
+  state.showSun = merged.showSun;
+  state.options = merged.options;
+  refreshDatalists();
+}
+
+async function connectCloud(key, opts){
+  opts = opts || {};
+  const {appM, fsM} = await loadFirebase();
+  let app;
+  try{ app = appM.getApp(); }catch(e){ app = appM.initializeApp(FIREBASE_CONFIG); }
+  let db;
+  try{
+    db = fsM.initializeFirestore(app, {localCache: fsM.persistentLocalCache({tabManager: fsM.persistentMultipleTabManager()})});
+  }catch(e){
+    db = fsM.getFirestore(app);   /* 已初始化過（切換金鑰時） */
+  }
+  const metaRef = fsM.doc(db, 'teams', key, 'meta', 'settings');
+  const snap = await fsM.getDoc(metaRef);
+  if(!snap.exists()){
+    if(!opts.allowNew) throw new Error('這組金鑰查無雲端排程，請確認是否完整複製（共 48 碼）');
+    await fsM.setDoc(metaRef, cloudMetaFromState());
+  }
+  if(cloud && cloud.unsubs) cloud.unsubs.forEach(u => { try{ u(); }catch(e){} });
+  cloud = {fsM, db, key, unsubs: []};
+  mode = 'cloud';
+  try{ localStorage.setItem('cathlab-teamkey', key); }catch(e){}
+  /* 監聽設定（選單、導管室名稱、週末顯示） */
+  cloud.unsubs.push(fsM.onSnapshot(metaRef, s => {
+    if(!s.exists()) return;
+    applyCloudMeta(s.data());
+    if(!settingsOpen()) render();
+  }, e => setStatus('⚠ 雲端連線中斷')));
+  /* 監聽全部排程（即時、逐筆同步） */
+  cloud.unsubs.push(fsM.onSnapshot(fsM.collection(db, 'teams', key, 'cases'), s => {
+    const arr = [];
+    s.forEach(d => arr.push(d.data()));
+    state.cases = migrate(Object.assign(cloudMetaFromState(), {cases: arr})).cases;
+    try{ localStorage.setItem('cathlab-data', JSON.stringify(Object.assign(cloudMetaFromState(), {cases: state.cases}))); }catch(e){}
+    if(!settingsOpen()) render();
+    setStatus('☁ 已同步 ' + nowTime());
+    attemptDailyBackup();
+  }, e => { setStatus('⚠ 雲端連線中斷'); toast('雲端連線錯誤：' + e.message); }));
+  $('#startOverlay').classList.add('hidden');
+  $('#banner').classList.add('hidden');
+  render();
+  setStatus('☁ 已連線雲端資料庫');
+}
+
+function cloudWriteCase(c){
+  const {fsM, db, key} = cloud;
+  setStatus('☁ 儲存中…');
+  fsM.setDoc(fsM.doc(db, 'teams', key, 'cases', c.id), c)
+    .then(() => setStatus('☁ 已同步 ' + nowTime()))
+    .catch(e => { setStatus('⚠ 同步失敗'); toast('雲端寫入失敗：' + e.message); });
+}
+function cloudDeleteCase(id){
+  const {fsM, db, key} = cloud;
+  setStatus('☁ 儲存中…');
+  fsM.deleteDoc(fsM.doc(db, 'teams', key, 'cases', id))
+    .then(() => setStatus('☁ 已同步 ' + nowTime()))
+    .catch(e => { setStatus('⚠ 同步失敗'); toast('雲端刪除失敗：' + e.message); });
+}
+function cloudWriteMeta(){
+  const {fsM, db, key} = cloud;
+  fsM.setDoc(fsM.doc(db, 'teams', key, 'meta', 'settings'), cloudMetaFromState())
+    .catch(e => toast('設定同步失敗：' + e.message));
+}
+async function cloudImportCases(list){
+  const {fsM, db, key} = cloud;
+  for(let i = 0; i < list.length; i += 400){
+    const batch = fsM.writeBatch(db);
+    list.slice(i, i + 400).forEach(c => batch.set(fsM.doc(db, 'teams', key, 'cases', c.id), c));
+    await batch.commit();
+  }
+}
+async function cloudReplaceAll(newState){
+  const {fsM, db, key} = cloud;
+  const oldIds = state.cases.map(c => c.id);
+  state.roomNames = newState.roomNames;
+  state.showSat = newState.showSat;
+  state.showSun = newState.showSun;
+  state.options = newState.options;
+  state.cases = newState.cases;
+  let batch = fsM.writeBatch(db), n = 0;
+  const flush = async () => { if(n){ await batch.commit(); batch = fsM.writeBatch(db); n = 0; } };
+  for(const id of oldIds){
+    if(!newState.cases.some(c => c.id === id)){ batch.delete(fsM.doc(db, 'teams', key, 'cases', id)); if(++n >= 400) await flush(); }
+  }
+  for(const c of newState.cases){ batch.set(fsM.doc(db, 'teams', key, 'cases', c.id), c); if(++n >= 400) await flush(); }
+  batch.set(fsM.doc(db, 'teams', key, 'meta', 'settings'), cloudMetaFromState()); n++;
+  await flush();
+}
+
+/* 每日自動把雲端資料備份成 JSON 存到使用者指定的資料夾（建議選 Dropbox\心導管排程\） */
+async function attemptDailyBackup(force){
+  if(mode !== 'cloud') return;
+  const today = ymd(new Date());
+  try{
+    if(!force && localStorage.getItem('cathlab-lastbackup') === today) return;
+    if(backupDirHandle === undefined){
+      try{ backupDirHandle = (await idbGet('backupDir')) || null; }catch(e){ backupDirHandle = null; }
+    }
+    if(!backupDirHandle) return;
+    let p = await backupDirHandle.queryPermission({mode: 'readwrite'});
+    if(p !== 'granted'){
+      if(!force) return;
+      p = await backupDirHandle.requestPermission({mode: 'readwrite'});
+      if(p !== 'granted') return;
+    }
+    const fh = await backupDirHandle.getFileHandle('雲端備份-' + today.replaceAll('-', '') + '.json', {create: true});
+    const w = await fh.createWritable();
+    await w.write(JSON.stringify(Object.assign(cloudMetaFromState(), {cases: state.cases}), null, 1));
+    await w.close();
+    localStorage.setItem('cathlab-lastbackup', today);
+    if(force) toast('已備份到指定資料夾');
+  }catch(e){ if(force) toast('備份失敗：' + e.message); }
+}
 
 /* ================= 資料檔（File System Access API） ================= */
 const PICKER_TYPES = [{description:'排程資料 (JSON)', accept:{'application/json':['.json']}}];
@@ -1343,7 +1557,12 @@ $('#jumpDate').onchange = e => { if(e.target.value){ weekStart = mondayOf(new Da
 $('#btnPrint').onclick = () => window.print();
 $('#btnSettings').onclick = openSettings;
 $('#btnShare').onclick = async () => {
-  const msg = '心導管室排程系統\n👉 點此開啟：https://keitheva2009-create.github.io/cathlab-schedule/\n（請用 Chrome 或 Edge。第一次開啟請點「開啟現有資料檔…」，選擇 Dropbox「心導管排程」資料夾中的排程資料檔；需先加入該 Dropbox 共享資料夾）';
+  let msg = '心導管室排程系統\n👉 點此開啟：https://keitheva2009-create.github.io/cathlab-schedule/\n（請用 Chrome 或 Edge）';
+  if(mode === 'cloud' && cloud){
+    msg += '\n開啟後貼上這組團隊金鑰即可看到排程（請勿外流給團隊以外的人）：\n' + cloud.key;
+  }else{
+    msg += '\n第一次開啟請點「開啟現有資料檔…」，選擇 Dropbox「心導管排程」資料夾中的排程資料檔（需先加入該 Dropbox 共享資料夾）';
+  }
   try{
     await navigator.clipboard.writeText(msg);
     toast('已複製分享訊息，可直接貼給同事');
@@ -1409,11 +1628,18 @@ $('#s-importFile').onchange = async e => {
   const f = e.target.files[0]; if(!f) return;
   try{
     const incoming = parseAppData(await f.text());
-    if(!confirm('匯入將以備份內容覆蓋目前全部排程：\n目前 ' + state.cases.length + ' 筆 → 匯入後 ' + incoming.cases.length + ' 筆\n確定要匯入？')){ e.target.value = ''; return; }
-    state = incoming;
-    $('#settingsModal').classList.add('hidden');
-    await persist(); render();
-    toast('已匯入資料');
+    if(!confirm('匯入將以備份內容覆蓋目前全部排程' + (mode === 'cloud' ? '（雲端資料也會被覆蓋，所有電腦同步生效）' : '') + '：\n目前 ' + state.cases.length + ' 筆 → 匯入後 ' + incoming.cases.length + ' 筆\n確定要匯入？')){ e.target.value = ''; return; }
+    if(mode === 'cloud'){
+      $('#settingsModal').classList.add('hidden');
+      await cloudReplaceAll(incoming);
+      render();
+      toast('已匯入資料（雲端已更新）');
+    }else{
+      state = incoming;
+      $('#settingsModal').classList.add('hidden');
+      await persist(); render();
+      toast('已匯入資料');
+    }
   }catch(err){ alert('匯入失敗：' + err.message); }
   e.target.value = '';
 };
@@ -1422,6 +1648,53 @@ $('#st-create').onclick = createDataFile;
 $('#st-open').onclick = openDataFile;
 $('#st-trial').onclick = startTrial;
 $('#st-reconnect').onclick = reconnect;
+
+/* --- 雲端資料庫事件 --- */
+async function stCloudConnect(){
+  const key = $('#st-key').value.trim();
+  if(key.length !== 48){ alert('金鑰應為 48 碼（目前 ' + key.length + ' 碼），請確認是否完整複製'); return; }
+  $('#st-cloud-connect').disabled = true;
+  try{
+    await connectCloud(key);
+    toast('☁ 已連線雲端排程');
+  }catch(e){ alert('連線失敗：' + e.message); }
+  $('#st-cloud-connect').disabled = false;
+}
+$('#st-cloud-connect').onclick = stCloudConnect;
+$('#st-key').addEventListener('keydown', e => { if(e.key === 'Enter') stCloudConnect(); });
+
+$('#cloud-enable').onclick = async () => {
+  if(!confirm('啟用雲端資料庫？\n\n．會產生一組 48 碼團隊金鑰（同事憑金鑰共用排程）\n．目前畫面中的排程（' + state.cases.length + ' 筆）與選單會上傳到雲端\n．資料存放於 Google Firestore 台灣機房\n．原本的 Dropbox 資料檔會保留，不受影響')) return;
+  const key = newTeamKey();
+  $('#settingsModal').classList.add('hidden');
+  try{
+    const casesToUpload = state.cases.slice();
+    await connectCloud(key, {allowNew: true});
+    if(casesToUpload.length) await cloudImportCases(casesToUpload);
+    cloudWriteMeta();
+    prompt('☁ 雲端已啟用！請複製這組團隊金鑰傳給同事\n（此瀏覽器已自動記住，設定中可隨時再複製）：', key);
+    toast('雲端資料庫已啟用，已上傳 ' + casesToUpload.length + ' 筆排程');
+  }catch(e){ alert('啟用失敗：' + e.message); }
+};
+$('#cloud-copykey').onclick = async () => {
+  if(!cloud) return;
+  try{ await navigator.clipboard.writeText(cloud.key); toast('已複製團隊金鑰'); }
+  catch(e){ prompt('請手動複製團隊金鑰：', cloud.key); }
+};
+$('#cloud-backupdir').onclick = async () => {
+  try{
+    const dir = await showDirectoryPicker({mode: 'readwrite'});
+    backupDirHandle = dir;
+    try{ await idbSet('backupDir', dir); }catch(e){}
+    toast('已設定備份資料夾：' + dir.name + '（每天自動備份一次）');
+    attemptDailyBackup(true);
+  }catch(e){ if(e.name !== 'AbortError') toast('設定失敗：' + e.message); }
+};
+$('#cloud-leave').onclick = () => {
+  if(!confirm('離開雲端資料庫？\n雲端資料不會被刪除，之後輸入金鑰即可再連回。\n離開後本頁會重新載入，改用本機資料檔。')) return;
+  try{ localStorage.removeItem('cathlab-teamkey'); }catch(e){}
+  location.reload();
+};
 
 document.addEventListener('keydown', e => {
   if(e.key === 'Escape'){
@@ -1435,6 +1708,16 @@ document.addEventListener('keydown', e => {
 (async function boot(){
   $('#jumpDate').value = ymd(new Date());
   render();
+  /* 雲端優先：有記住的團隊金鑰就自動連線 */
+  if(cloudAvailable()){
+    $('#st-cloud-section').classList.remove('hidden');
+    let savedKey = null;
+    try{ savedKey = localStorage.getItem('cathlab-teamkey'); }catch(e){}
+    if(savedKey && savedKey.length === 48){
+      try{ await connectCloud(savedKey); return; }
+      catch(e){ toast('雲端自動連線失敗：' + e.message); }
+    }
+  }
   if(!window.showOpenFilePicker){
     $('#st-create').disabled = true;
     $('#st-open').disabled = true;
