@@ -410,6 +410,7 @@ td.filled.clash{box-shadow:inset 0 0 0 2px #e53935}
 <div class="overlay hidden" id="pwModal">
   <div class="dialog lg-dialog">
     <h2>修改密碼</h2>
+    <p class="imp-hint">請勿使用與院內其他系統（HIS、Email）相同的密碼。</p>
     <div class="lg-form">
       <label>目前密碼<input id="pw-old" type="password" autocomplete="current-password"></label>
       <label>新密碼（至少 4 碼）<input id="pw-new" type="password" autocomplete="new-password"></label>
@@ -1010,7 +1011,7 @@ function saveSettings(){
   state.options.beds = lines($('#s-beds').value);
   state.options.details = lines($('#s-details').value);
   $('#settingsModal').classList.add('hidden');
-  if(mode === 'cloud') cloudWriteMeta();
+  if(mode === 'cloud'){ cloudWriteMeta(); cloudLog('設定', {name: '修改設定/選單'}); }
   else persist();
   render();
 }
@@ -1466,6 +1467,7 @@ function cloudMetaFromState(){
     showSat: !!state.showSat, showSun: !!state.showSun,
     options: state.options,
     updatedAt: new Date().toISOString(),
+    updatedBy: (typeof currentUser === 'string' && currentUser) || '',
   };
 }
 function applyCloudMeta(m){
@@ -1618,6 +1620,23 @@ async function sha256Hex(str){
   const b = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(str));
   return [...new Uint8Array(b)].map(x => x.toString(16).padStart(2, '0')).join('');
 }
+/* 密碼雜湊：PBKDF2-SHA256 十萬次迭代（防止拿到資料的人暴力破解同事密碼） */
+const PW_ITER = 100000;
+async function pbkdf2Hex(password, saltHex, iterations){
+  const km = await crypto.subtle.importKey('raw', new TextEncoder().encode(password), 'PBKDF2', false, ['deriveBits']);
+  const bits = await crypto.subtle.deriveBits(
+    {name: 'PBKDF2', hash: 'SHA-256', salt: new TextEncoder().encode(saltHex), iterations},
+    km, 256);
+  return [...new Uint8Array(bits)].map(x => x.toString(16).padStart(2, '0')).join('');
+}
+async function makePassRecord(password){
+  const salt = newTeamKey().slice(0, 16);
+  return {algo: 'pbkdf2', iter: PW_ITER, salt, passHash: await pbkdf2Hex(password, salt, PW_ITER)};
+}
+async function verifyPassword(u, pw){
+  if(u.algo === 'pbkdf2') return (await pbkdf2Hex(pw, u.salt || '', u.iter || PW_ITER)) === u.passHash;
+  return (await sha256Hex((u.salt || '') + pw)) === u.passHash;   /* 舊格式，登入成功後自動升級 */
+}
 function updateUserBadge(){ $('#userBadge').textContent = currentUser ? '👤 ' + currentUser : ''; }
 
 function ensureLogin(){
@@ -1650,15 +1669,20 @@ async function loginSubmit(){
     const snap = await fsM.getDoc(ref);
     if(snap.exists()){
       const u = snap.data();
-      if(await sha256Hex((u.salt || '') + pw) !== u.passHash){ alert('密碼錯誤'); return; }
+      let okPw = await verifyPassword(u, pw);
+      /* 預設密碼（＝員工編號）不分大小寫 */
+      if(!okPw && u.mustChange && pw.trim().toUpperCase() === id) okPw = true;
+      if(!okPw){ alert('密碼錯誤'); return; }
+      if(u.algo !== 'pbkdf2'){   /* 舊雜湊格式透明升級 */
+        try{ await fsM.setDoc(ref, Object.assign({}, u, await makePassRecord(u.mustChange ? id : pw))); }catch(e){}
+      }
       setUser(id);
       toast('👤 ' + id + ' 已登入');
       if(u.mustChange) openPwModal(true, pw);
     }else{
-      /* 第一次登入：帳號密碼都是員工編號 → 自動建立帳號 */
-      if(pw !== id){ alert('查無此帳號「' + id + '」。\n第一次登入請以員工編號作為帳號與密碼（例如 G00212 / G00212）。'); return; }
-      const salt = newTeamKey().slice(0, 16);
-      await fsM.setDoc(ref, {empId: id, salt, passHash: await sha256Hex(salt + id), mustChange: true, createdAt: new Date().toISOString()});
+      /* 第一次登入：帳號密碼都是員工編號（不分大小寫）→ 自動建立帳號 */
+      if(pw.trim().toUpperCase() !== id){ alert('查無此帳號「' + id + '」。\n第一次登入請以員工編號作為帳號與密碼（例如 G00212 / G00212）。'); return; }
+      await fsM.setDoc(ref, Object.assign({empId: id, mustChange: true, createdAt: new Date().toISOString()}, await makePassRecord(id)));
       setUser(id);
       cloudLog('建立帳號', {name: id});
       toast('👤 已建立帳號 ' + id);
@@ -1678,18 +1702,21 @@ async function savePassword(){
   const oldPw = $('#pw-old').value, npw = $('#pw-new').value, npw2 = $('#pw-new2').value;
   if(npw.length < 4){ alert('新密碼至少 4 碼'); return; }
   if(npw !== npw2){ alert('兩次輸入的新密碼不相同'); return; }
+  $('#pw-save').disabled = true;
   try{
     const {fsM, db, key} = cloud;
     const ref = fsM.doc(db, 'teams', key, 'users', currentUser);
     const snap = await fsM.getDoc(ref);
     if(!snap.exists()){ alert('帳號資料不存在，請重新登入'); return; }
     const u = snap.data();
-    if(await sha256Hex((u.salt || '') + oldPw) !== u.passHash){ alert('目前密碼錯誤'); return; }
-    const salt = newTeamKey().slice(0, 16);
-    await fsM.setDoc(ref, Object.assign({}, u, {salt, passHash: await sha256Hex(salt + npw), mustChange: false, updatedAt: new Date().toISOString()}));
+    let okOld = await verifyPassword(u, oldPw);
+    if(!okOld && u.mustChange && oldPw.trim().toUpperCase() === (u.empId || currentUser)) okOld = true;
+    if(!okOld){ alert('目前密碼錯誤'); return; }
+    await fsM.setDoc(ref, Object.assign({}, u, await makePassRecord(npw), {mustChange: false, updatedAt: new Date().toISOString()}));
     $('#pwModal').classList.add('hidden');
     toast('密碼已更新');
   }catch(e){ alert('修改失敗：' + e.message); }
+  finally{ $('#pw-save').disabled = false; }
 }
 
 /* 異動紀錄：每筆新增/修改/取消/復原/刪除/匯入都留下誰、何時、動了哪筆 */
@@ -1912,8 +1939,12 @@ $('#s-importFile').onchange = async e => {
     const incoming = parseAppData(await f.text());
     if(!confirm('匯入將以備份內容覆蓋目前全部排程' + (mode === 'cloud' ? '（雲端資料也會被覆蓋，所有電腦同步生效）' : '') + '：\n目前 ' + state.cases.length + ' 筆 → 匯入後 ' + incoming.cases.length + ' 筆\n確定要匯入？')){ e.target.value = ''; return; }
     if(mode === 'cloud'){
+      if(!currentUser){ $('#settingsModal').classList.add('hidden'); ensureLogin(); e.target.value = ''; return; }
+      const rNow = new Date().toISOString();
+      incoming.cases.forEach(c => { c.updatedBy = currentUser; c.updatedAt = rNow; });
       $('#settingsModal').classList.add('hidden');
       await cloudReplaceAll(incoming);
+      cloudLog('還原', {name: '整批還原備份（' + incoming.cases.length + ' 筆）'});
       render();
       toast('已匯入資料（雲端已更新）');
     }else{
@@ -1991,7 +2022,10 @@ $('#cloud-leave').onclick = async () => {
   location.reload();
 };
 $('#lg-submit').onclick = loginSubmit;
-$('#lg-pw').addEventListener('keydown', e => { if(e.key === 'Enter' && !e.isComposing) loginSubmit(); });
+$('#lg-pw').addEventListener('keydown', e => { if(e.key === 'Enter' && !e.isComposing && !$('#lg-submit').disabled) loginSubmit(); });
+$('#pwModal').addEventListener('keydown', e => {
+  if(e.key === 'Enter' && !e.isComposing && e.target.tagName === 'INPUT' && !$('#pw-save').disabled){ e.preventDefault(); savePassword(); }
+});
 $('#lg-id').addEventListener('keydown', e => { if(e.key === 'Enter' && !e.isComposing) $('#lg-pw').focus(); });
 $('#pw-save').onclick = savePassword;
 $('#pw-cancel').onclick = () => $('#pwModal').classList.add('hidden');
