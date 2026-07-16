@@ -95,6 +95,11 @@ td.filled.done{background:#eef6ee}
 /* 兩間導管室之間的粗分隔線 */
 #grid .rs{border-left:3px solid #555}
 
+/* 時段重疊警示（多台電腦同時排入） */
+.dup{display:block; color:#b3261e; font-size:11.5px; font-weight:bold; cursor:pointer; white-space:nowrap; overflow:hidden; text-overflow:ellipsis}
+.dup:hover{text-decoration:underline}
+td.filled.clash{box-shadow:inset 0 0 0 2px #e53935}
+
 /* 劃線取消（保留原格） */
 .cxl{
   display:block; text-decoration:line-through; color:#9aa0a6;
@@ -297,9 +302,11 @@ td.filled.done{background:#eef6ee}
     <div class="data-tools hidden" id="cloud-tools">
       <span id="cloud-info"></span>
       <button id="cloud-enable">☁ 啟用雲端資料庫…</button>
+      <button id="cloud-join" class="hidden">連線既有雲端排程…</button>
       <button id="cloud-copykey" class="hidden">複製團隊金鑰</button>
       <button id="cloud-backupdir" class="hidden">設定每日備份資料夾…</button>
       <button id="cloud-leave" class="hidden">離開雲端（改用資料檔）</button>
+      <span id="cloud-backup-info"></span>
     </div>
     <div class="data-tools">
       <span id="s-fileinfo"></span>
@@ -648,18 +655,30 @@ function tbodyHtml(date){
   const key = ymd(date);
   const byRoom = [Object.create(null), Object.create(null)];
   const cxlByRoom = [Object.create(null), Object.create(null)];
-  state.cases.filter(c => c.date === key).forEach(c => {
-    if(c.cancelledAt){   /* 劃線取消：不佔格，只留紀錄 */
-      (cxlByRoom[c.room][c.slot] = cxlByRoom[c.room][c.slot] || []).push(c);
-      return;
-    }
-    const i = DAY_SLOTS.indexOf(c.slot);
-    byRoom[c.room][c.slot] = {owner:c};
-    for(let k=1; k<(c.span||1); k++){
-      const s2 = DAY_SLOTS[i+k];
-      if(s2) byRoom[c.room][s2] = {cover:true};
-    }
+  const dupAt = [Object.create(null), Object.create(null)];   /* 兩台電腦同時排到重疊時段 → 掛到可見格警示，絕不隱藏 */
+  const todays = state.cases.filter(c => c.date === key);
+  todays.filter(c => c.cancelledAt).forEach(c => {
+    (cxlByRoom[c.room][c.slot] = cxlByRoom[c.room][c.slot] || []).push(c);
   });
+  todays.filter(c => !c.cancelledAt)
+    .sort((a, b) => DAY_SLOTS.indexOf(a.slot) - DAY_SLOTS.indexOf(b.slot))
+    .forEach(c => {
+      const i = DAY_SLOTS.indexOf(c.slot);
+      const hit = byRoom[c.room][c.slot];
+      if(hit){   /* 起始格已被別的排程佔用：掛到該格所屬的可見格 */
+        const anchor = hit.owner ? c.slot : hit.ownerSlot;
+        (dupAt[c.room][anchor] = dupAt[c.room][anchor] || []).push(c);
+        return;
+      }
+      let eff = 1;
+      for(let k = 1; k < (c.span||1); k++){
+        const s2 = DAY_SLOTS[i+k];
+        if(!s2 || byRoom[c.room][s2]) break;
+        eff++;
+      }
+      byRoom[c.room][c.slot] = {owner: c, eff, clipped: eff < (c.span||1)};
+      for(let k = 1; k < eff; k++) byRoom[c.room][DAY_SLOTS[i+k]] = {cover: true, ownerSlot: c.slot};
+    });
 
   let h = `<tbody class="day${key===ymd(new Date())?' today':''}">`;
   DAY_SLOTS.forEach((s,ri)=>{
@@ -674,10 +693,13 @@ function tbodyHtml(date){
       if(e && e.cover) continue;
       if(e && e.owner){
         const c = e.owner;
-        const rsAttr = (c.span||1) > 1 ? ` rowspan="${c.span}"` : '';
+        const eff = e.eff || (c.span||1);
+        const rsAttr = eff > 1 ? ` rowspan="${eff}"` : '';
         const opCls = (c.startedAt && !c.endedAt) ? ' live' : (c.endedAt ? ' done' : '');
         const i0 = DAY_SLOTS.indexOf(s);
-        const cxlIn = DAY_SLOTS.slice(i0, i0 + (c.span||1)).flatMap(s2 => cxlByRoom[r][s2] || []);
+        const cxlIn = DAY_SLOTS.slice(i0, i0 + eff).flatMap(s2 => cxlByRoom[r][s2] || []);
+        const dups = dupAt[r][s] || [];
+        const clashCls = (dups.length || e.clipped) ? ' clash' : '';
         h += COLS.map((col, ci) => {
           let inner = esc(c[col.k]||'');
           let tip = c[col.k]||'';
@@ -685,9 +707,11 @@ function tbodyHtml(date){
             inner += opBadge(c);
             const ot = opText(c);
             if(ot) tip += '\n' + ot;   /* 滑鼠停留可看完整手術時間 */
+            if(e.clipped) inner += `<span class="dup" data-id="${esc(c.id)}" title="此排程原長 ${spanLabel(c.span||1)}，與其他排程重疊僅部分顯示，點擊調整">⚠ 與其他排程重疊</span>`;
+            inner += dups.map(d => `<span class="dup" data-id="${esc(d.id)}" title="⚠ 兩台電腦同時排到重疊時段，點擊開啟調整">⚠ ${esc(d.name)}（時段重疊）</span>`).join('');
             inner += cxlIn.map(x => cxlSpan(x, 'name')).join('');   /* 同格被取消的排程劃線顯示 */
           }
-          return `<td class="filled r${r} c-${col.k}${opCls}${ci===0&&r===1?' rs':''}"${rsAttr} data-id="${esc(c.id)}" title="${esc(tip)}">${inner}</td>`;
+          return `<td class="filled r${r} c-${col.k}${opCls}${clashCls}${ci===0&&r===1?' rs':''}"${rsAttr} data-id="${esc(c.id)}" title="${esc(tip)}">${inner}</td>`;
         }).join('');
       }else{
         const cxls = cxlByRoom[r][s] || [];
@@ -811,12 +835,9 @@ function saveCase(){
     });
     if(clash){ alert('時段衝突：該時段已排「' + clash.name + '」（' + slotLabel(clash.slot) + '）'); return false; }
   }
-  const learned = [
-    learnOption('procedures', c.procedure),
-    learnOption('physicians', c.physician),
-    learnOption('beds', c.bed),
-    learnOption('details', c.detail),
-  ].some(Boolean);
+  const added = {};
+  [['procedures', c.procedure], ['physicians', c.physician], ['beds', c.bed], ['details', c.detail]]
+    .forEach(([k, v]) => { if(learnOption(k, v)) (added[k] = added[k] || []).push(v); });
   if(editing){
     const live = state.cases.find(x => x.id === editing.id);   /* 同步可能已置換 state，改以 id 定位 */
     if(live) Object.assign(live, c); else state.cases.push(c);
@@ -824,7 +845,7 @@ function saveCase(){
     state.cases.push(c);
   }
   closeCaseModal();
-  if(mode === 'cloud'){ cloudWriteCase(c); if(learned) cloudWriteMeta(); }
+  if(mode === 'cloud'){ cloudWriteCase(c); cloudLearnOptions(added); }
   else persist();
   render();
   const wd = new Date(c.date + 'T00:00:00').getDay();
@@ -861,18 +882,35 @@ function openSettings(){
     : (mode === 'file' && fileHandle ? '資料檔：' + fileHandle.name : '資料僅暫存於此瀏覽器（試用模式）');
   $('#s-changeFile').classList.toggle('hidden', !window.showOpenFilePicker || mode === 'cloud');
   /* 雲端資料庫區塊 */
+  openSettings._rev = metaRev;
   $('#cloud-tools').classList.toggle('hidden', !cloudAvailable());
   if(cloudAvailable()){
     const isCloud = mode === 'cloud' && cloud;
     $('#cloud-info').textContent = isCloud ? ('☁ 已連線雲端（金鑰末 6 碼：' + cloud.key.slice(-6) + '）') : '雲端資料庫：未連線';
     $('#cloud-enable').classList.toggle('hidden', !!isCloud);
+    $('#cloud-join').classList.toggle('hidden', !!isCloud);
     $('#cloud-copykey').classList.toggle('hidden', !isCloud);
     $('#cloud-backupdir').classList.toggle('hidden', !isCloud);
     $('#cloud-leave').classList.toggle('hidden', !isCloud);
+    $('#cloud-backup-info').textContent = '';
+    if(isCloud){
+      (async () => {   /* 顯示備份狀態，權限失效時提醒 */
+        let txt = '上次備份：' + (localStorage.getItem('cathlab-lastbackup') || '尚未');
+        try{
+          if(backupDirHandle === undefined) backupDirHandle = (await idbGet('backupDir')) || null;
+          if(!backupDirHandle) txt += '（尚未設定備份資料夾）';
+          else if((await backupDirHandle.queryPermission({mode:'readwrite'})) !== 'granted')
+            txt += '（⚠ 備份需重新授權：請再點一次「設定每日備份資料夾…」）';
+        }catch(e){}
+        $('#cloud-backup-info').textContent = txt;
+      })();
+    }
   }
   $('#settingsModal').classList.remove('hidden');
 }
 function saveSettings(){
+  if(mode === 'cloud' && openSettings._rev !== metaRev
+     && !confirm('提醒：你編輯設定期間，其他電腦也修改過設定或選單。\n按「確定」將以你目前畫面的內容覆蓋對方的修改。')) return;
   const lines = v => v.split(/\r?\n/).map(x=>x.trim()).filter(Boolean);
   state.roomNames = [$('#s-room0').value.trim() || '導管室1', $('#s-room1').value.trim() || '導管室2'];
   state.showSat = $('#s-sat').checked;
@@ -1263,12 +1301,11 @@ $('#imp-confirm').onclick = async () => {
   const conflict = ev.filter(e => e.status === 'conflict').length;
   if(!adds.length){ toast('沒有可匯入的新排程' + (dup || conflict ? '（重複 ' + dup + '、衝突 ' + conflict + '）' : '')); return; }
   let firstDate = null, hiddenDay = 0;
+  const addedOpts = {};
   for(const pc of adds){
     state.cases.push(pc);
-    learnOption('procedures', pc.procedure);
-    learnOption('physicians', pc.physician);
-    learnOption('beds', pc.bed);
-    learnOption('details', pc.detail);
+    [['procedures', pc.procedure], ['physicians', pc.physician], ['beds', pc.bed], ['details', pc.detail]]
+      .forEach(([k, v]) => { if(learnOption(k, v)) (addedOpts[k] = addedOpts[k] || []).push(v); });
     if(!firstDate || pc.date < firstDate) firstDate = pc.date;
     const wd = new Date(pc.date + 'T00:00:00').getDay();
     if((wd === 6 && !state.showSat) || (wd === 0 && !state.showSun)) hiddenDay++;
@@ -1277,7 +1314,7 @@ $('#imp-confirm').onclick = async () => {
   if(firstDate){ weekStart = mondayOf(new Date(firstDate + 'T00:00:00')); $('#jumpDate').value = firstDate; }
   let ok;
   if(mode === 'cloud'){
-    try{ await cloudImportCases(adds); cloudWriteMeta(); ok = true; }
+    try{ await cloudImportCases(adds); cloudLearnOptions(addedOpts); ok = true; }
     catch(e){ ok = false; toast('雲端寫入失敗：' + e.message); }
   }else{
     ok = await persist();
@@ -1311,9 +1348,21 @@ function loadFirebase(){
     loadFirebase._p = Promise.all([
       import('https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js'),
       import('https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js'),
-    ]).then(([appM, fsM]) => ({appM, fsM}));
+    ]).then(([appM, fsM]) => ({appM, fsM}))
+      .catch(e => { loadFirebase._p = null; throw e; });   /* 載入失敗不快取，重試時重新載入 SDK */
   }
   return loadFirebase._p;
+}
+
+let metaRev = 0;   /* 每次收到雲端設定更新就 +1，用於偵測設定視窗開啟期間的外部修改 */
+function cloudRetryReconnect(){
+  if(mode !== 'cloud' || !cloud || cloud._retryTimer) return;
+  cloud._retryTimer = setTimeout(async () => {
+    if(mode !== 'cloud' || !cloud) return;
+    const key = cloud.key;
+    try{ await connectCloud(key); toast('☁ 雲端已重新連線'); }
+    catch(e){ if(cloud){ cloud._retryTimer = null; cloudRetryReconnect(); } }
+  }, 15000);
 }
 
 function cloudMetaFromState(){
@@ -1326,6 +1375,7 @@ function cloudMetaFromState(){
   };
 }
 function applyCloudMeta(m){
+  metaRev++;
   const merged = migrate(Object.assign({}, m, {cases: []}));
   state.roomNames = merged.roomNames;
   state.showSat = merged.showSat;
@@ -1360,17 +1410,25 @@ async function connectCloud(key, opts){
     if(!s.exists()) return;
     applyCloudMeta(s.data());
     if(!settingsOpen()) render();
-  }, e => setStatus('⚠ 雲端連線中斷')));
-  /* 監聽全部排程（即時、逐筆同步） */
-  cloud.unsubs.push(fsM.onSnapshot(fsM.collection(db, 'teams', key, 'cases'), s => {
+  }, e => { setStatus('⚠ 雲端連線中斷，自動重試中…'); cloudRetryReconnect(); }));
+  /* 監聽全部排程（即時、逐筆同步）；includeMetadataChanges 讓「已同步」狀態在快取→伺服器確認後能更新 */
+  cloud.unsubs.push(fsM.onSnapshot(fsM.collection(db, 'teams', key, 'cases'), {includeMetadataChanges: true}, s => {
     const arr = [];
     s.forEach(d => arr.push(d.data()));
-    state.cases = migrate(Object.assign(cloudMetaFromState(), {cases: arr})).cases;
-    try{ localStorage.setItem('cathlab-data', JSON.stringify(Object.assign(cloudMetaFromState(), {cases: state.cases}))); }catch(e){}
-    if(!settingsOpen()) render();
-    setStatus('☁ 已同步 ' + nowTime());
-    attemptDailyBackup();
-  }, e => { setStatus('⚠ 雲端連線中斷'); toast('雲端連線錯誤：' + e.message); }));
+    const newCases = migrate(Object.assign(cloudMetaFromState(), {cases: arr})).cases;
+    const sig = JSON.stringify(newCases);
+    if(sig !== cloud._casesSig){   /* 資料真的變了才重畫，metadata 事件只更新狀態列 */
+      cloud._casesSig = sig;
+      state.cases = newCases;
+      if(!settingsOpen()) render();
+    }
+    if(s.metadata.hasPendingWrites || s.metadata.fromCache){
+      setStatus('☁ 已暫存（等待連線同步）');
+    }else{
+      setStatus('☁ 已同步 ' + nowTime());
+      attemptDailyBackup();   /* 只在拿到伺服器最新資料後才備份 */
+    }
+  }, e => { setStatus('⚠ 雲端連線中斷，自動重試中…'); toast('雲端連線錯誤：' + e.message); cloudRetryReconnect(); }));
   $('#startOverlay').classList.add('hidden');
   $('#banner').classList.add('hidden');
   render();
@@ -1395,6 +1453,16 @@ function cloudWriteMeta(){
   const {fsM, db, key} = cloud;
   fsM.setDoc(fsM.doc(db, 'teams', key, 'meta', 'settings'), cloudMetaFromState())
     .catch(e => toast('設定同步失敗：' + e.message));
+}
+/* 新學到的選單項目用 arrayUnion「合併」寫入，不覆蓋其他電腦同時新增的項目 */
+function cloudLearnOptions(added){
+  const keys = Object.keys(added || {}).filter(k => added[k] && added[k].length);
+  if(!keys.length) return;
+  const {fsM, db, key} = cloud;
+  const patch = {};
+  keys.forEach(k => { patch['options.' + k] = fsM.arrayUnion(...added[k]); });
+  fsM.updateDoc(fsM.doc(db, 'teams', key, 'meta', 'settings'), patch)
+    .catch(e => toast('選單同步失敗：' + e.message));
 }
 async function cloudImportCases(list){
   const {fsM, db, key} = cloud;
@@ -1428,6 +1496,7 @@ async function attemptDailyBackup(force){
   const today = ymd(new Date());
   try{
     if(!force && localStorage.getItem('cathlab-lastbackup') === today) return;
+    if(!force && !state.cases.length) return;   /* 不寫入空備份（避免快取尚未就緒時鎖定當日備份） */
     if(backupDirHandle === undefined){
       try{ backupDirHandle = (await idbGet('backupDir')) || null; }catch(e){ backupDirHandle = null; }
     }
@@ -1542,6 +1611,8 @@ function exportBackup(){
 
 /* ================= 事件 ================= */
 $('#grid').addEventListener('click', e => {
+  const dp = e.target.closest('span.dup');   /* 時段重疊的排程：點擊開啟調整 */
+  if(dp){ const c = state.cases.find(x => x.id === dp.dataset.id); if(c) openCaseModal(c); return; }
   const cx = e.target.closest('span.cxl');   /* 劃線的已取消排程：點擊檢視/復原 */
   if(cx){ const c = state.cases.find(x => x.id === cx.dataset.cxlId); if(c) openCaseModal(c); return; }
   const f = e.target.closest('td.filled');
@@ -1620,7 +1691,7 @@ $('#caseModal').addEventListener('keydown', e => {
 });
 
 $('#s-save').onclick = saveSettings;
-$('#s-cancel').onclick = () => $('#settingsModal').classList.add('hidden');
+$('#s-cancel').onclick = () => { $('#settingsModal').classList.add('hidden'); render(); };   /* 補畫設定期間吸收的雲端更新 */
 $('#s-export').onclick = exportBackup;
 $('#s-changeFile').onclick = () => { $('#settingsModal').classList.add('hidden'); openDataFile(); };
 $('#s-import').onclick = () => $('#s-importFile').click();
@@ -1690,16 +1761,36 @@ $('#cloud-backupdir').onclick = async () => {
     attemptDailyBackup(true);
   }catch(e){ if(e.name !== 'AbortError') toast('設定失敗：' + e.message); }
 };
-$('#cloud-leave').onclick = () => {
-  if(!confirm('離開雲端資料庫？\n雲端資料不會被刪除，之後輸入金鑰即可再連回。\n離開後本頁會重新載入，改用本機資料檔。')) return;
-  try{ localStorage.removeItem('cathlab-teamkey'); }catch(e){}
+$('#cloud-leave').onclick = async () => {
+  if(!confirm('離開雲端資料庫？\n雲端資料不會被刪除，之後輸入金鑰即可再連回。\n離開後本頁會重新載入，並清除此電腦上的雲端快取資料。')) return;
+  try{
+    localStorage.removeItem('cathlab-teamkey');
+    localStorage.removeItem('cathlab-data');
+    localStorage.removeItem('cathlab-lastbackup');
+  }catch(e){}
+  try{
+    if(cloud){
+      cloud.unsubs.forEach(u => { try{ u(); }catch(e){} });
+      const {fsM, db} = cloud;
+      await fsM.terminate(db);
+      await fsM.clearIndexedDbPersistence(db);   /* 清除本機留存的病人資料快取 */
+    }
+  }catch(e){}
   location.reload();
+};
+$('#cloud-join').onclick = async () => {
+  const key = (prompt('請貼上 48 碼團隊金鑰：') || '').trim();
+  if(!key) return;
+  if(key.length !== 48){ alert('金鑰應為 48 碼（目前 ' + key.length + ' 碼），請確認是否完整複製'); return; }
+  $('#settingsModal').classList.add('hidden');
+  try{ await connectCloud(key); toast('☁ 已連線雲端排程'); }
+  catch(e){ alert('連線失敗：' + e.message); }
 };
 
 document.addEventListener('keydown', e => {
   if(e.key === 'Escape'){
     if(!$('#caseModal').classList.contains('hidden')) closeCaseModal();
-    else if(!$('#settingsModal').classList.contains('hidden')) $('#settingsModal').classList.add('hidden');
+    else if(!$('#settingsModal').classList.contains('hidden')){ $('#settingsModal').classList.add('hidden'); render(); }
     else if(!$('#importModal').classList.contains('hidden')) $('#importModal').classList.add('hidden');
   }
 });
@@ -1715,7 +1806,12 @@ document.addEventListener('keydown', e => {
     try{ savedKey = localStorage.getItem('cathlab-teamkey'); }catch(e){}
     if(savedKey && savedKey.length === 48){
       try{ await connectCloud(savedKey); return; }
-      catch(e){ toast('雲端自動連線失敗：' + e.message); }
+      catch(e){
+        /* 已是雲端團隊成員：連線失敗時停在啟動畫面等待重試，不退回可能過期的本機資料檔 */
+        $('#st-key').value = savedKey;
+        $('#st-hint').textContent = '⚠ 雲端連線失敗：' + ((e && e.message) || e) + '。請檢查網路後按「連線」重試；本機資料檔可能不是最新內容，請小心使用。';
+        return;
+      }
     }
   }
   if(!window.showOpenFilePicker){
