@@ -85,7 +85,32 @@ tbody.day > tr:first-child > td{border-top:3px solid #444}
 td.empty{cursor:pointer; height:26px}
 td.empty:hover{background:#eef5ff}
 tr.extra td.empty:hover{background:#dde8f5}
-td.filled{cursor:pointer; vertical-align:top}
+td.filled{cursor:pointer; vertical-align:top; -webkit-touch-callout:none}
+
+/* 長按拖曳移動排程 */
+body.dragging-mode{user-select:none; -webkit-user-select:none; cursor:grabbing}
+td.filled.dragging{opacity:.3}
+#dragGhost{
+  position:fixed; z-index:200; pointer-events:none; white-space:nowrap;
+  background:#1a56a8; color:#fff; padding:5px 11px; border-radius:8px;
+  font-size:13px; font-weight:bold; box-shadow:0 5px 16px rgba(0,0,0,.35);
+  transform:translate(-50%,-150%);
+}
+#dropZone{
+  position:fixed; z-index:190; pointer-events:none; border-radius:6px;
+  border:3px solid #2e7d32; background:rgba(46,125,50,.18);
+}
+#dropZone.bad{border-color:#c62828; background:rgba(198,40,40,.15)}
+#dropZone .dz-label{
+  position:absolute; left:50%; top:50%; transform:translate(-50%,-50%);
+  background:rgba(0,0,0,.78); color:#fff; font-size:12px; font-weight:bold;
+  padding:3px 9px; border-radius:6px; white-space:nowrap;
+}
+.toast-btn{
+  margin-left:12px; padding:3px 11px; border-radius:6px; border:1px solid #fff;
+  background:transparent; color:#fff; cursor:pointer; font-family:inherit; font-size:12px;
+}
+.toast-btn:hover{background:rgba(255,255,255,.2)}
 td.filled.r0{background:var(--r0-cell)}
 td.filled.r1{background:var(--r1-cell)}
 td.filled.c-name{font-weight:bold}
@@ -266,7 +291,7 @@ td.filled.clash{box-shadow:inset 0 0 0 2px #e53935}
   <button id="nextWeek">下週 ▶</button>
   <input type="date" id="jumpDate" title="跳至指定日期之週">
   <span id="weekLabel"></span>
-  <span class="sub">點空白格新增／點個案可編輯</span>
+  <span class="sub">點空白格新增／點個案可編輯／<b>長按個案可拖曳移動</b></span>
   <span class="spacer"></span>
   <span id="saveStatus"></span>
   <button id="btnImportXlsx">📥 匯入Excel</button>
@@ -519,9 +544,19 @@ function opBadge(c){
   return `<span class="op-badge ${c.endedAt ? 'done' : 'live'}">${esc(t)}</span>`;
 }
 
-function toast(msg){
-  const t = $('#toast'); t.textContent = msg; t.classList.remove('hidden');
-  clearTimeout(toast._t); toast._t = setTimeout(()=>t.classList.add('hidden'), 3500);
+function toast(msg, action){
+  const t = $('#toast');
+  t.textContent = msg;
+  if(action){
+    const b = document.createElement('button');
+    b.className = 'toast-btn';
+    b.textContent = action.label;
+    b.onclick = () => { t.classList.add('hidden'); action.fn(); };
+    t.appendChild(b);
+  }
+  t.classList.remove('hidden');
+  clearTimeout(toast._t);
+  toast._t = setTimeout(()=>t.classList.add('hidden'), action ? 9000 : 3500);
 }
 function setStatus(msg){ $('#saveStatus').textContent = msg; }
 
@@ -721,10 +756,10 @@ function tbodyHtml(date){
       for(let k = 1; k < eff; k++) byRoom[c.room][DAY_SLOTS[i+k]] = {cover: true, ownerSlot: c.slot};
     });
 
-  let h = `<tbody class="day${key===ymd(new Date())?' today':''}">`;
+  let h = `<tbody class="day${key===ymd(new Date())?' today':''}" data-date="${key}">`;
   DAY_SLOTS.forEach((s,ri)=>{
     const cls = (s[0]==='X' ? 'extra' : '') + (s==='1300' ? ' pm-start' : '');
-    h += `<tr class="${cls}">`;
+    h += `<tr class="${cls}" data-slot="${s}">`;
     if(ri === 0){
       h += `<td class="daycell" rowspan="${DAY_SLOTS.length}"><div>${WEEKNAMES[date.getDay()]}</div><div class="d">${md(date)}</div></td>`;
     }
@@ -1674,6 +1709,162 @@ function exportBackup(){
 }
 
 /* ================= 事件 ================= */
+/* ================= 長按拖曳：移動排程到別的時段／導管室 ================= */
+const LONGPRESS_MS = 450, DRAG_TOL = 8;
+let drag = null;
+
+function suppressNextClick(){
+  const h = e => { e.stopPropagation(); e.preventDefault(); };
+  document.addEventListener('click', h, {capture: true, once: true});
+  setTimeout(() => document.removeEventListener('click', h, {capture: true}), 500);
+}
+function dragCleanup(){
+  if(!drag) return;
+  clearTimeout(drag.timer);
+  clearInterval(drag.scrollTimer);
+  if(drag.ghost) drag.ghost.remove();
+  if(drag.zone) drag.zone.remove();
+  document.querySelectorAll('td.dragging').forEach(td => td.classList.remove('dragging'));
+  document.body.classList.remove('dragging-mode');
+  drag = null;
+}
+/* 以「列（時段）＋ X 座標（導管室）」判斷目標格，跨列合併的格子也能正確定位 */
+function dragTargetAt(x, y){
+  const el = document.elementFromPoint(x, y);
+  if(!el || el.closest('.daycell, .timecell, thead')) return null;
+  const tr = el.closest('tr[data-slot]'), tb = el.closest('tbody[data-date]');
+  if(!tr || !tb) return null;
+  const rel = x - $('#grid').getBoundingClientRect().left - W_DAY - W_TIME;
+  const room = Math.floor(rel / COLS_W);
+  if(rel < 0 || room < 0 || room >= siteRooms().length) return null;
+  return {date: tb.dataset.date, room, slot: tr.dataset.slot, tbody: tb};
+}
+function dragValidate(c, t){
+  if(!t) return {ok: false, msg: ''};
+  if(t.date === c.date && t.room === c.room && t.slot === c.slot) return {ok: false, same: true, msg: '原位置'};
+  const span = c.span || 1;
+  if(maxSpan(t.slot) < span) return {ok: false, msg: '放不下 ' + spanLabel(span)};
+  const i = DAY_SLOTS.indexOf(t.slot), a2 = i + span - 1;
+  const clash = state.cases.find(o => {
+    if(o.id === c.id || o.cancelledAt) return false;
+    if((o.site || 'hc') !== (c.site || 'hc') || o.date !== t.date || o.room !== t.room) return false;
+    const [b1, b2] = rangeOf(o);
+    return i <= b2 && b1 <= a2;
+  });
+  if(clash) return {ok: false, msg: '已排「' + clash.name + '」'};
+  return {ok: true, msg: ''};
+}
+function dragUpdate(x, y){
+  if(!drag || !drag.active) return;
+  drag.ghost.style.left = x + 'px';
+  drag.ghost.style.top = y + 'px';
+  const t = drag.target = dragTargetAt(x, y);
+  const z = drag.zone;
+  if(!t){ z.style.display = 'none'; return; }
+  const v = dragValidate(drag.c, t);
+  const rows = t.tbody.querySelectorAll('tr');
+  const i = DAY_SLOTS.indexOf(t.slot);
+  const last = Math.min(i + (drag.c.span || 1) - 1, rows.length - 1);
+  const sr = $('#scroll').getBoundingClientRect();
+  const top = Math.max(rows[i].getBoundingClientRect().top, sr.top);
+  const bottom = Math.min(rows[last].getBoundingClientRect().bottom, sr.bottom);
+  if(bottom <= top){ z.style.display = 'none'; return; }
+  z.style.display = 'block';
+  z.style.left = ($('#grid').getBoundingClientRect().left + W_DAY + W_TIME + t.room * COLS_W) + 'px';
+  z.style.top = top + 'px';
+  z.style.width = COLS_W + 'px';
+  z.style.height = (bottom - top) + 'px';
+  z.classList.toggle('bad', !v.ok && !v.same);
+  z.querySelector('.dz-label').textContent = v.ok
+    ? (md(new Date(t.date + 'T00:00:00')) + ' ' + slotLabel(t.slot) + '　' + siteRoomName(t.room))
+    : v.msg;
+}
+function dragEdgeScroll(){
+  if(!drag || !drag.active) return;
+  const s = $('#scroll'), sr = s.getBoundingClientRect(), E = 60;
+  /* 越靠近邊緣捲得越快（8～40px/次），跨到另一間導管室才不會太慢 */
+  const speed = d => Math.round(8 + 32 * Math.min(1, Math.max(0, d) / E));
+  let moved = false;
+  if(drag.lastX > sr.right - E){ s.scrollLeft += speed(drag.lastX - (sr.right - E)); moved = true; }
+  else if(drag.lastX < sr.left + E){ s.scrollLeft -= speed((sr.left + E) - drag.lastX); moved = true; }
+  if(drag.lastY > sr.bottom - E){ s.scrollTop += speed(drag.lastY - (sr.bottom - E)); moved = true; }
+  else if(drag.lastY < sr.top + E){ s.scrollTop -= speed((sr.top + E) - drag.lastY); moved = true; }
+  if(moved) dragUpdate(drag.lastX, drag.lastY);
+}
+function dragActivate(){
+  if(!drag) return;
+  drag.active = true;
+  const c = drag.c;
+  document.querySelectorAll('td.filled').forEach(td => { if(td.dataset.id === c.id) td.classList.add('dragging'); });
+  document.body.classList.add('dragging-mode');
+  const g = document.createElement('div');
+  g.id = 'dragGhost';
+  g.textContent = c.name + (c.procedure ? '・' + c.procedure : '') + '（' + spanLabel(c.span || 1) + '）';
+  document.body.appendChild(g);
+  drag.ghost = g;
+  const z = document.createElement('div');
+  z.id = 'dropZone';
+  z.innerHTML = '<span class="dz-label"></span>';
+  document.body.appendChild(z);
+  drag.zone = z;
+  try{ if(navigator.vibrate) navigator.vibrate(20); }catch(e){}
+  drag.scrollTimer = setInterval(dragEdgeScroll, 60);
+  dragUpdate(drag.lastX, drag.lastY);
+}
+function dragDrop(t){
+  const c = state.cases.find(x => x.id === drag.c.id);
+  if(!c) return;
+  const from = {date: c.date, room: c.room, slot: c.slot};
+  const label = p => md(new Date(p.date + 'T00:00:00')) + ' ' + slotLabel(p.slot) + '（' + siteRoomName(p.room) + '）';
+  c.date = t.date; c.room = t.room; c.slot = t.slot;
+  if(mode === 'cloud') cloudWriteCase(c); else persist();
+  render();
+  toast('已移動「' + c.name + '」→ ' + label(t), {label: '復原', fn: () => {
+    const cc = state.cases.find(x => x.id === c.id);
+    if(!cc){ toast('這筆排程已不存在'); return; }
+    const v = dragValidate(cc, from);
+    if(!v.ok && !v.same){ toast('無法復原：原時段' + (v.msg ? '已被占用（' + v.msg + '）' : '不可用')); return; }
+    cc.date = from.date; cc.room = from.room; cc.slot = from.slot;
+    if(mode === 'cloud') cloudWriteCase(cc); else persist();
+    render();
+    toast('已復原至 ' + label(from));
+  }});
+}
+
+$('#grid').addEventListener('pointerdown', e => {
+  if(e.button > 0) return;
+  if(e.target.closest('span.cxl, span.dup')) return;   /* 這些是點擊開啟，不拖曳 */
+  const td = e.target.closest('td.filled');
+  if(!td) return;
+  const c = state.cases.find(x => x.id === td.dataset.id);
+  if(!c || c.cancelledAt) return;                       /* 已劃線取消的不拖曳 */
+  drag = {c, startX: e.clientX, startY: e.clientY, lastX: e.clientX, lastY: e.clientY, active: false};
+  drag.timer = setTimeout(dragActivate, LONGPRESS_MS);
+});
+document.addEventListener('pointermove', e => {
+  if(!drag) return;
+  drag.lastX = e.clientX; drag.lastY = e.clientY;
+  if(!drag.active){
+    if(Math.abs(e.clientX - drag.startX) > DRAG_TOL || Math.abs(e.clientY - drag.startY) > DRAG_TOL) dragCleanup();
+    return;
+  }
+  dragUpdate(e.clientX, e.clientY);
+});
+document.addEventListener('pointerup', () => {
+  if(!drag) return;
+  if(drag.active){
+    suppressNextClick();
+    const t = drag.target, v = t ? dragValidate(drag.c, t) : {ok: false};
+    if(v.ok) dragDrop(t);
+    else if(t && !v.same && v.msg) toast('無法移動到該時段：' + v.msg);
+  }
+  dragCleanup();
+});
+document.addEventListener('pointercancel', dragCleanup);
+window.addEventListener('blur', dragCleanup);   /* 指標離開視窗／pointerup 遺失時不卡住 */
+$('#scroll').addEventListener('touchmove', e => { if(drag && drag.active) e.preventDefault(); }, {passive: false});
+$('#grid').addEventListener('contextmenu', e => { if(drag) e.preventDefault(); });
+
 $('#grid').addEventListener('click', e => {
   const dp = e.target.closest('span.dup');   /* 時段重疊的排程：點擊開啟調整 */
   if(dp){ const c = state.cases.find(x => x.id === dp.dataset.id); if(c) openCaseModal(c); return; }
@@ -1859,6 +2050,7 @@ $('#cloud-join').onclick = async () => {
 
 document.addEventListener('keydown', e => {
   if(e.key === 'Escape'){
+    if(drag){ dragCleanup(); return; }   /* 拖曳中 → 取消移動 */
     if(!$('#caseModal').classList.contains('hidden')) closeCaseModal();
     else if(!$('#settingsModal').classList.contains('hidden')){ $('#settingsModal').classList.add('hidden'); render(); }
     else if(!$('#importModal').classList.contains('hidden')) $('#importModal').classList.add('hidden');
