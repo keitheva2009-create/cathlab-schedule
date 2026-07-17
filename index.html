@@ -19,10 +19,10 @@ body{
   display:flex; flex-direction:column;
 }
 /* ---------- 院區切換 ---------- */
-#siteBar{display:flex; gap:10px; padding:10px 12px 2px; background:#fafafa}
+#siteBar{display:flex; gap:6px; padding:6px 12px 2px; background:#fafafa}
 .site-btn{
-  flex:1; max-width:340px; padding:12px 18px; font-size:17px; font-weight:bold; font-family:inherit;
-  border:2px solid #bbb; border-radius:12px; background:#fff; color:#888; cursor:pointer;
+  flex:1; max-width:170px; padding:6px 9px; font-size:13px; font-weight:bold; font-family:inherit;
+  border:2px solid #bbb; border-radius:8px; background:#fff; color:#888; cursor:pointer;
 }
 .site-btn:hover{filter:brightness(0.96)}
 #site-hc.active{background:#1a56a8; border-color:#1a56a8; color:#fff}
@@ -102,17 +102,18 @@ span.flash-cxl{background:#ffe082; border-radius:4px}
 #grid thead th.roomname.r1{background:var(--r1-bg); color:var(--r1)}
 #grid thead th.corner{left:0; z-index:7}
 #grid thead th.h-day{left:0; z-index:7}
-#grid thead th.h-time{left:64px; z-index:7}
+#grid thead th.h-time{left:32px; z-index:7}
 
 td.daycell{
   position:sticky; left:0; z-index:3; background:#fafafa;
-  text-align:center; font-weight:bold; vertical-align:top; padding-top:10px;
+  text-align:center; font-weight:bold; vertical-align:top;
+  padding:8px 1px 0; font-size:13px;
 }
-td.daycell .d{color:#666; font-weight:normal; margin-top:2px}
+td.daycell .d{color:#666; font-weight:normal; margin-top:2px; font-size:11px}
 tbody.today td.daycell{background:#fff8d6; color:#a4660a}
 td.timecell{
-  position:sticky; left:64px; z-index:3; background:#fff;
-  color:#444; font-size:12px; text-align:center;
+  position:sticky; left:32px; z-index:3; background:#fff;
+  color:#444; font-size:11px; text-align:center; padding:2px 1px;
 }
 tr.extra td{background:#e9e9e9}
 tr.extra td.timecell{background:#e2e2e2; font-weight:bold}
@@ -334,7 +335,6 @@ td.filled.clash{box-shadow:inset 0 0 0 2px #e53935}
     <button id="searchClear" class="hidden" title="清除">✕</button>
     <div id="searchResults" class="hidden"></div>
   </span>
-  <span class="sub">點空白格新增／點個案可編輯／<b>長按個案可拖曳移動</b></span>
   <span class="spacer"></span>
   <span id="saveStatus"></span>
   <button id="btnUndo" disabled>↩ 復原</button>
@@ -472,8 +472,8 @@ td.filled.clash{box-shadow:inset 0 0 0 2px #e53935}
 <script>
 'use strict';
 /* ================= 基本常數 ================= */
-const AM = ['0800','0830','0900','0930','1000','1030','1100','1130'];
-const PM = ['1300','1330','1400','1430','1500','1530','1600','1630'];
+const AM = ['0800','0900','1000','1100'];   /* 1 小時一格 */
+const PM = ['1300','1400','1500','1600'];
 const DAY_SLOTS = [...AM,'X1','X2',...PM,'X3','X4'];
 const WEEKNAMES = ['星期日','星期一','星期二','星期三','星期四','星期五','星期六'];
 
@@ -488,7 +488,7 @@ const COLS = [
   {k:'detail',    label:'細項',     w:90},
   {k:'note',      label:'備註',     w:170},
 ];
-const W_DAY = 64, W_TIME = 88;
+const W_DAY = 32, W_TIME = 44;
 const COLS_W = COLS.reduce((s, c) => s + c.w, 0);
 
 /* 院區：新竹＝兩間導管室、生醫＝單間（西門子） */
@@ -512,7 +512,7 @@ const FIREBASE_CONFIG = {
 
 function defaultState(){
   return {
-    app:'cathlab-schedule', version:2,
+    app:'cathlab-schedule', version:3,
     roomNames:['Philip','SIEMENS'],
     bmRoomName:'SIEMENS',
     showSat:true, showSun:false,
@@ -547,14 +547,16 @@ function mondayOf(d){ const x = new Date(d); x.setHours(0,0,0,0); x.setDate(x.ge
 function addDays(d,n){ const x = new Date(d); x.setDate(x.getDate()+n); return x; }
 function nowTime(){ return new Date().toLocaleTimeString('zh-TW',{hour12:false}); }
 
-function slotEnd(s){ let h = +s.slice(0,2), m = +s.slice(2) + 30; if(m===60){h++; m=0;} return h + ':' + String(m).padStart(2,'0'); }
+function slotEnd(s){ const m = +s.slice(0,2) * 60 + +s.slice(2) + 60; return Math.floor(m/60) + ':' + String(m%60).padStart(2,'0'); }
 function slotLabel(s){ return s[0]==='X' ? '加台'+s[1] : (+s.slice(0,2)) + ':' + s.slice(2) + '~' + slotEnd(s); }
+/* 表格時間欄用（欄位窄，只顯示起始時間） */
+function slotShort(s){ return s[0]==='X' ? '加'+s[1] : (+s.slice(0,2)) + ':' + s.slice(2); }
 function maxSpan(s){
   if(s[0]==='X') return 1;
   const a = AM.indexOf(s); if(a >= 0) return AM.length - a;
   const p = PM.indexOf(s); return p >= 0 ? PM.length - p : 1;
 }
-function spanLabel(n){ return n===1 ? '30 分鐘' : (n/2) + ' 小時'; }
+function spanLabel(n){ return n + ' 小時'; }
 function rangeOf(c){ const i = DAY_SLOTS.indexOf(c.slot); return [i, i + (c.span||1) - 1]; }
 
 function fmtT(iso){
@@ -604,10 +606,11 @@ function setStatus(msg){ $('#saveStatus').textContent = msg; }
 function migrate(p){
   const d = defaultState();
   if(!p || typeof p !== 'object') return d;
+  const ver = +p.version || 1;
   const s = Object.assign(d, p);
   s.app = 'cathlab-schedule';
-  if(p.showSat === undefined || (+p.version || 1) < 2) s.showSat = true;   /* v2 起預設開放週六排程 */
-  s.version = 2;
+  if(p.showSat === undefined || ver < 2) s.showSat = true;   /* v2 起預設開放週六排程 */
+  s.version = 3;
   const rawOpts = (p.options && typeof p.options === 'object') ? p.options : {};
   const defOpts = defaultState().options;
   s.options = {};
@@ -617,8 +620,14 @@ function migrate(p){
   if(!Array.isArray(s.roomNames) || s.roomNames.length < 2) s.roomNames = defaultState().roomNames;
   s.roomNames = s.roomNames.slice(0,2).map(String);
   s.bmRoomName = (typeof p.bmRoomName === 'string' && p.bmRoomName.trim()) ? p.bmRoomName : 'SIEMENS';
-  s.cases = (Array.isArray(p.cases) ? p.cases : [])
-    .filter(c => c && typeof c === 'object' && c.date && DAY_SLOTS.includes(c.slot) && (+c.room === 0 || +c.room === 1));
+  /* v3：時段由「30 分鐘一格」改為「1 小時一格」。必須在丟棄無效時段前換算，否則半點的排程會整筆消失 */
+  const raw = (Array.isArray(p.cases) ? p.cases : []).filter(c => c && typeof c === 'object');
+  raw.forEach(c => {
+    if(typeof c.slot === 'string' && c.slot[0] !== 'X' && c.slot.slice(2) === '30')
+      c.slot = c.slot.slice(0, 2) + '00';                       /* 半點併到整點（可重複執行不會出錯） */
+    if(ver < 3) c.span = Math.max(1, Math.ceil((+c.span || 1) / 2));   /* 佔用格數：30 分鐘單位 → 1 小時單位 */
+  });
+  s.cases = raw.filter(c => c.date && DAY_SLOTS.includes(c.slot) && (+c.room === 0 || +c.room === 1));
   const seenIds = new Set();
   s.cases.forEach(c => {
     c.room = +c.room;
@@ -804,9 +813,9 @@ function tbodyHtml(date){
     const cls = (s[0]==='X' ? 'extra' : '') + (s==='1300' ? ' pm-start' : '');
     h += `<tr class="${cls}" data-slot="${s}">`;
     if(ri === 0){
-      h += `<td class="daycell" rowspan="${DAY_SLOTS.length}"><div>${WEEKNAMES[date.getDay()]}</div><div class="d">${md(date)}</div></td>`;
+      h += `<td class="daycell" rowspan="${DAY_SLOTS.length}" title="${WEEKNAMES[date.getDay()]} ${md(date)}"><div>${WEEKNAMES[date.getDay()].slice(2)}</div><div class="d">${md(date)}</div></td>`;
     }
-    h += `<td class="timecell">${slotLabel(s)}</td>`;
+    h += `<td class="timecell" title="${slotLabel(s)}">${slotShort(s)}</td>`;
     for(let r=0; r<R; r++){
       const e = byRoom[r][s];
       if(e && e.cover) continue;
@@ -1077,6 +1086,8 @@ const IMP_FIELDS = [
 ];
 const IMP_SLOT_BY_START = {};
 DAY_SLOTS.forEach(s => { if(s[0] !== 'X') IMP_SLOT_BY_START[(+s.slice(0,2)) + ':' + s.slice(2)] = s; });
+/* 來源 Excel 若仍是 30 分鐘一列，半點併入該小時 */
+DAY_SLOTS.forEach(s => { if(s[0] !== 'X') IMP_SLOT_BY_START[(+s.slice(0,2)) + ':30'] = s; });
 const IMP_SEX = {'男':'M','女':'F','M':'M','F':'F','m':'M','f':'F'};
 
 function impParseSlot(v){
@@ -1472,6 +1483,7 @@ $('#imp-confirm').onclick = async () => {
 
 /* ================= 雲端資料庫（Firebase Firestore） ================= */
 let cloud = null;             /* {fsM, db, key, unsubs:[]} 連線後才有值 */
+let cloudDataVer = 3;         /* 雲端「已存資料」的格式版本；<3 表示時段仍是 30 分鐘制，讀取時需換算 */
 let backupDirHandle;          /* 每日備份資料夾 handle（undefined=尚未載入, null=未設定） */
 
 function cloudAvailable(){ return !!FIREBASE_CONFIG; }
@@ -1517,13 +1529,17 @@ function cloudRetryReconnect(){
 
 function cloudMetaFromState(){
   return {
-    app: 'cathlab-schedule', version: 2,
+    app: 'cathlab-schedule', version: 3,
     roomNames: state.roomNames,
     bmRoomName: state.bmRoomName || 'SIEMENS',
     showSat: !!state.showSat, showSun: !!state.showSun,
     options: state.options,
     updatedAt: new Date().toISOString(),
   };
+}
+/* 讀取雲端排程時，一律以「雲端資料的格式版本」換算，避免舊格式被誤判 */
+function migrateCloudCases(arr){
+  return migrate(Object.assign(cloudMetaFromState(), {version: cloudDataVer, cases: arr})).cases;
 }
 function applyCloudMeta(m){
   metaRev++;
@@ -1549,6 +1565,7 @@ async function connectCloud(key, opts){
   }
   const metaRef = fsM.doc(db, 'teams', key, 'meta', 'settings');
   const snap = await fsM.getDoc(metaRef);
+  if(snap.exists()) cloudDataVer = +snap.data().version || 1;   /* 先確定資料格式，再掛監聽 */
   /* 金鑰已搬家（例如縮短金鑰後）：自動轉接到新金鑰 */
   if(snap.exists() && typeof snap.data().movedTo === 'string' && !opts._hopped){
     const nk = normalizeKey(snap.data().movedTo);
@@ -1565,6 +1582,7 @@ async function connectCloud(key, opts){
   /* 監聽設定（選單、導管室名稱、週末顯示） */
   cloud.unsubs.push(fsM.onSnapshot(metaRef, s => {
     if(!s.exists()) return;
+    cloudDataVer = +s.data().version || 1;
     applyCloudMeta(s.data());
     if(!settingsOpen()) render();
   }, e => { setStatus('⚠ 雲端連線中斷，自動重試中…'); cloudRetryReconnect(); }));
@@ -1572,7 +1590,7 @@ async function connectCloud(key, opts){
   cloud.unsubs.push(fsM.onSnapshot(fsM.collection(db, 'teams', key, 'cases'), {includeMetadataChanges: true}, s => {
     const arr = [];
     s.forEach(d => arr.push(d.data()));
-    const newCases = migrate(Object.assign(cloudMetaFromState(), {cases: arr})).cases;
+    const newCases = migrateCloudCases(arr);
     const sig = JSON.stringify(newCases);
     if(sig !== cloud._casesSig){   /* 資料真的變了才重畫，metadata 事件只更新狀態列 */
       cloud._casesSig = sig;
