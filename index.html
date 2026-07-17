@@ -290,7 +290,6 @@ td.filled.clash{box-shadow:inset 0 0 0 2px #e53935}
 <header id="toolbar">
   <h1>心導管室排程</h1>
   <button id="prevWeek">◀ 上週</button>
-  <button id="thisWeek">本週</button>
   <button id="todayBtn">本日</button>
   <button id="nextWeek">下週 ▶</button>
   <input type="date" id="jumpDate" title="跳至指定日期之週">
@@ -1970,7 +1969,6 @@ $('#site-bm').onclick = () => setSite('bm');
 
 $('#prevWeek').onclick = () => { weekStart = addDays(weekStart,-7); $('#jumpDate').value = ymd(weekStart); render(); };
 $('#nextWeek').onclick = () => { weekStart = addDays(weekStart, 7); $('#jumpDate').value = ymd(weekStart); render(); };
-$('#thisWeek').onclick = () => { weekStart = mondayOf(new Date()); $('#jumpDate').value = ymd(new Date()); render(); };
 $('#todayBtn').onclick = () => {   /* 跳到本週並捲到今天的區塊 */
   const t = new Date(), key = ymd(t);
   weekStart = mondayOf(t);
