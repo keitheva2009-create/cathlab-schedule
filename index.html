@@ -18,6 +18,16 @@ body{
   font-size:13px; color:#222; background:#fff;
   display:flex; flex-direction:column;
 }
+/* ---------- 院區切換 ---------- */
+#siteBar{display:flex; gap:10px; padding:10px 12px 2px; background:#fafafa}
+.site-btn{
+  flex:1; max-width:340px; padding:12px 18px; font-size:17px; font-weight:bold; font-family:inherit;
+  border:2px solid #bbb; border-radius:12px; background:#fff; color:#888; cursor:pointer;
+}
+.site-btn:hover{filter:brightness(0.96)}
+#site-hc.active{background:#1a56a8; border-color:#1a56a8; color:#fff}
+#site-bm.active{background:#00796b; border-color:#00796b; color:#fff}
+
 /* ---------- toolbar ---------- */
 #toolbar{
   display:flex; align-items:center; gap:8px; flex-wrap:wrap;
@@ -232,7 +242,7 @@ td.filled.clash{box-shadow:inset 0 0 0 2px #e53935}
 /* ---------- print ---------- */
 @page{size:A4 landscape; margin:8mm}
 @media print{
-  #toolbar,#banner,#toast,.overlay{display:none !important}
+  #siteBar,#toolbar,#banner,#toast,.overlay{display:none !important}
   body{height:auto}
   #scroll{overflow:visible; height:auto}
   #grid thead th, td.daycell, td.timecell{position:static}
@@ -245,6 +255,10 @@ td.filled.clash{box-shadow:inset 0 0 0 2px #e53935}
 </head>
 <body>
 
+<div id="siteBar">
+  <button id="site-hc" class="site-btn">新竹醫院</button>
+  <button id="site-bm" class="site-btn">生醫醫院</button>
+</div>
 <header id="toolbar">
   <h1>心導管室排程</h1>
   <button id="prevWeek">◀ 上週</button>
@@ -308,8 +322,9 @@ td.filled.clash{box-shadow:inset 0 0 0 2px #e53935}
   <div class="dialog">
     <h2>設定</h2>
     <div class="form-grid">
-      <label class="half">導管室 1 名稱<input id="s-room0"></label>
-      <label class="half">導管室 2 名稱<input id="s-room1"></label>
+      <label class="half">新竹醫院 導管室 1 名稱<input id="s-room0"></label>
+      <label class="half">新竹醫院 導管室 2 名稱<input id="s-room1"></label>
+      <label class="half">生醫醫院 導管室名稱<input id="s-room-bm"></label>
       <label class="chk half"><input type="checkbox" id="s-sat">顯示週六</label>
       <label class="chk half"><input type="checkbox" id="s-sun">顯示週日</label>
       <label class="half">術式選單（每行一項）<textarea id="s-procedures" rows="7"></textarea></label>
@@ -408,7 +423,16 @@ const COLS = [
   {k:'note',      label:'備註',     w:170},
 ];
 const W_DAY = 64, W_TIME = 88;
-const TABLE_W = W_DAY + W_TIME + 2 * COLS.reduce((s,c)=>s+c.w,0);
+const COLS_W = COLS.reduce((s, c) => s + c.w, 0);
+
+/* 院區：新竹＝兩間導管室、生醫＝單間（西門子） */
+const SITES = {hc: {label: '新竹醫院'}, bm: {label: '生醫醫院'}};
+let site = 'hc';
+try{ if(localStorage.getItem('cathlab-site') === 'bm') site = 'bm'; }catch(e){}
+function siteRooms(){ return site === 'bm' ? [state.bmRoomName || 'SIEMENS'] : state.roomNames; }
+function siteRoomName(r){ return siteRooms()[r] || ''; }
+function roomCls(r){ return site === 'bm' ? 'r1' : 'r' + r; }   /* 生醫單室沿用右側（綠色）樣式 */
+function tableWidth(){ return W_DAY + W_TIME + siteRooms().length * COLS_W; }
 
 /* 雲端資料庫設定（Firebase Web 設定為公開資訊，非機密；存取權由團隊金鑰＋安全規則控管） */
 const FIREBASE_CONFIG = {
@@ -424,6 +448,7 @@ function defaultState(){
   return {
     app:'cathlab-schedule', version:2,
     roomNames:['Philip','SIEMENS'],
+    bmRoomName:'SIEMENS',
     showSat:true, showSun:false,
     options:{
       sex:['M','F'],
@@ -515,11 +540,14 @@ function migrate(p){
   }
   if(!Array.isArray(s.roomNames) || s.roomNames.length < 2) s.roomNames = defaultState().roomNames;
   s.roomNames = s.roomNames.slice(0,2).map(String);
+  s.bmRoomName = (typeof p.bmRoomName === 'string' && p.bmRoomName.trim()) ? p.bmRoomName : 'SIEMENS';
   s.cases = (Array.isArray(p.cases) ? p.cases : [])
     .filter(c => c && typeof c === 'object' && c.date && DAY_SLOTS.includes(c.slot) && (+c.room === 0 || +c.room === 1));
   const seenIds = new Set();
   s.cases.forEach(c => {
     c.room = +c.room;
+    c.site = c.site === 'bm' ? 'bm' : 'hc';
+    if(c.site === 'bm') c.room = 0;   /* 生醫只有一間 */
     c.span = Math.min(Math.max(+c.span || 1, 1), maxSpan(c.slot));
     c.id = String(c.id || '') || uid();
     if(seenIds.has(c.id)) c.id = uid();
@@ -635,38 +663,41 @@ function weekDays(){
 function render(){
   const days = weekDays();
   $('#weekLabel').textContent = ymd(days[0]).replaceAll('-','/') + ' ～ ' + ymd(days[days.length-1]).replaceAll('-','/');
+  $('#site-hc').classList.toggle('active', site === 'hc');
+  $('#site-bm').classList.toggle('active', site === 'bm');
   const grid = $('#grid');
-  grid.style.width = TABLE_W + 'px';
+  grid.style.width = tableWidth() + 'px';
   grid.innerHTML = colgroupHtml() + theadHtml() + days.map(d=>tbodyHtml(d)).join('');
   refreshDatalists();
 }
 
 function colgroupHtml(){
   let h = `<colgroup><col style="width:${W_DAY}px"><col style="width:${W_TIME}px">`;
-  for(let r=0; r<2; r++) COLS.forEach(c => h += `<col style="width:${c.w}px">`);
+  siteRooms().forEach(() => COLS.forEach(c => h += `<col style="width:${c.w}px">`));
   return h + '</colgroup>';
 }
 
 function theadHtml(){
+  const rooms = siteRooms();
   return `<thead>
     <tr class="rooms">
-      <th class="corner" colspan="2"></th>
-      <th class="roomname r0" colspan="${COLS.length}">${esc(state.roomNames[0])}</th>
-      <th class="roomname r1 rs" colspan="${COLS.length}">${esc(state.roomNames[1])}</th>
+      <th class="corner" colspan="2">${esc(SITES[site].label)}</th>
+      ${rooms.map((n, r) => `<th class="roomname ${roomCls(r)}${r === 1 ? ' rs' : ''}" colspan="${COLS.length}">${esc(n)}</th>`).join('')}
     </tr>
     <tr class="cols">
       <th class="h-day">日期</th><th class="h-time">時間</th>
-      ${[0,1].map(r => COLS.map((c,ci)=>`<th${r===1&&ci===0?' class="rs"':''}>${c.label}</th>`).join('')).join('')}
+      ${rooms.map((n, r) => COLS.map((c, ci) => `<th${r === 1 && ci === 0 ? ' class="rs"' : ''}>${c.label}</th>`).join('')).join('')}
     </tr>
   </thead>`;
 }
 
 function tbodyHtml(date){
   const key = ymd(date);
-  const byRoom = [Object.create(null), Object.create(null)];
-  const cxlByRoom = [Object.create(null), Object.create(null)];
-  const dupAt = [Object.create(null), Object.create(null)];   /* 兩台電腦同時排到重疊時段 → 掛到可見格警示，絕不隱藏 */
-  const todays = state.cases.filter(c => c.date === key);
+  const R = siteRooms().length;
+  const byRoom = Array.from({length: R}, () => Object.create(null));
+  const cxlByRoom = Array.from({length: R}, () => Object.create(null));
+  const dupAt = Array.from({length: R}, () => Object.create(null));   /* 兩台電腦同時排到重疊時段 → 掛到可見格警示，絕不隱藏 */
+  const todays = state.cases.filter(c => c.date === key && (c.site || 'hc') === site && c.room < R);
   todays.filter(c => c.cancelledAt).forEach(c => {
     (cxlByRoom[c.room][c.slot] = cxlByRoom[c.room][c.slot] || []).push(c);
   });
@@ -698,7 +729,7 @@ function tbodyHtml(date){
       h += `<td class="daycell" rowspan="${DAY_SLOTS.length}"><div>${WEEKNAMES[date.getDay()]}</div><div class="d">${md(date)}</div></td>`;
     }
     h += `<td class="timecell">${slotLabel(s)}</td>`;
-    for(let r=0; r<2; r++){
+    for(let r=0; r<R; r++){
       const e = byRoom[r][s];
       if(e && e.cover) continue;
       if(e && e.owner){
@@ -721,7 +752,7 @@ function tbodyHtml(date){
             inner += dups.map(d => `<span class="dup" data-id="${esc(d.id)}" title="⚠ 兩台電腦同時排到重疊時段，點擊開啟調整">⚠ ${esc(d.name)}（時段重疊）</span>`).join('');
             inner += cxlIn.map(x => cxlSpan(x, 'name')).join('');   /* 同格被取消的排程劃線顯示 */
           }
-          return `<td class="filled r${r} c-${col.k}${opCls}${clashCls}${ci===0&&r===1?' rs':''}"${rsAttr} data-id="${esc(c.id)}" title="${esc(tip)}">${inner}</td>`;
+          return `<td class="filled ${roomCls(r)} c-${col.k}${opCls}${clashCls}${ci===0&&r===1?' rs':''}"${rsAttr} data-id="${esc(c.id)}" title="${esc(tip)}">${inner}</td>`;
         }).join('');
       }else{
         const cxls = cxlByRoom[r][s] || [];
@@ -745,7 +776,7 @@ function refreshDatalists(){
 
 /* ================= 個案編輯 ================= */
 function refreshRoomSelect(){
-  $('#f-room').innerHTML = [0,1].map(r=>`<option value="${r}">${esc(state.roomNames[r])}</option>`).join('');
+  $('#f-room').innerHTML = siteRooms().map((n, r) => `<option value="${r}">${esc(n)}</option>`).join('');
 }
 function refreshSlotSelect(){
   $('#f-slot').innerHTML = DAY_SLOTS.map(s=>`<option value="${s}">${slotLabel(s)}</option>`).join('');
@@ -819,6 +850,7 @@ function saveCase(){
     id: editing ? editing.id : uid(),
     date: $('#f-date').value,
     room: +$('#f-room').value,
+    site: editing ? (editing.site || 'hc') : site,
     slot,
     span: Math.min(+$('#f-span').value || 1, maxSpan(slot)),
     name: $('#f-name').value.trim(),
@@ -839,7 +871,7 @@ function saveCase(){
   if(!c.cancelledAt){   /* 已劃線取消的排程不佔時段，也不擋人 */
     const [a1,a2] = rangeOf(c);
     const clash = state.cases.find(o => {
-      if(o.id === c.id || o.cancelledAt || o.date !== c.date || o.room !== c.room) return false;
+      if(o.id === c.id || o.cancelledAt || (o.site || 'hc') !== c.site || o.date !== c.date || o.room !== c.room) return false;
       const [b1,b2] = rangeOf(o);
       return a1 <= b2 && b1 <= a2;
     });
@@ -881,6 +913,7 @@ function deleteCase(){
 function openSettings(){
   $('#s-room0').value = state.roomNames[0];
   $('#s-room1').value = state.roomNames[1];
+  $('#s-room-bm').value = state.bmRoomName || 'SIEMENS';
   $('#s-sat').checked = !!state.showSat;
   $('#s-sun').checked = !!state.showSun;
   $('#s-procedures').value = state.options.procedures.join('\n');
@@ -923,6 +956,7 @@ function saveSettings(){
      && !confirm('提醒：你編輯設定期間，其他電腦也修改過設定或選單。\n按「確定」將以你目前畫面的內容覆蓋對方的修改。')) return;
   const lines = v => v.split(/\r?\n/).map(x=>x.trim()).filter(Boolean);
   state.roomNames = [$('#s-room0').value.trim() || '導管室1', $('#s-room1').value.trim() || '導管室2'];
+  state.bmRoomName = $('#s-room-bm').value.trim() || 'SIEMENS';
   state.showSat = $('#s-sat').checked;
   state.showSun = $('#s-sun').checked;
   state.options.procedures = lines($('#s-procedures').value);
@@ -1071,23 +1105,24 @@ async function impLoadWorkbook(buf){
 }
 
 /* 解析他們的排班表格式：日期直排、每日 8:00~17:00＋加台、左右兩室各一組欄位 */
-function parseScheduleGrid(sm, year){
+function parseScheduleGrid(sm, year, maxRooms){
+  maxRooms = maxRooms || 2;
   const rows = sm.rows, merges = sm.merges || [];
   const rowIdx = Object.keys(rows).map(Number).sort((a, b) => a - b);
   const warnings = [];
   if(!rowIdx.length) throw new Error('工作表是空的');
-  /* 表頭列＝同一列出現兩個「姓名」 */
+  /* 表頭列＝出現「姓名」的第一列（單室一組、雙室兩組） */
   let headerRow = -1, nameCols = [];
   for(const r of rowIdx){
     const cols = Object.keys(rows[r]).filter(c => String(rows[r][c]).trim() === '姓名').map(Number).sort((a, b) => a - b);
-    if(cols.length >= 2){ headerRow = r; nameCols = cols; break; }
+    if(cols.length >= 1){ headerRow = r; nameCols = cols; break; }
   }
-  if(headerRow < 0) throw new Error('找不到表頭：需有一列同時包含左右兩室的「姓名」欄');
-  if(nameCols.length > 2) warnings.push('偵測到超過兩組「姓名」欄，只匯入前兩組');
+  if(headerRow < 0) throw new Error('找不到表頭：工作表中需有「姓名」欄');
+  if(nameCols.length > maxRooms) warnings.push('Excel 有 ' + nameCols.length + ' 組「姓名」欄，本院區只有 ' + maxRooms + ' 間導管室，多的不匯入');
   const maxCol = Math.max(...rowIdx.map(r => Math.max(...Object.keys(rows[r]).map(Number))));
-  const groups = [0, 1].map(gi => {
+  const groups = Array.from({length: Math.min(nameCols.length, maxRooms)}, (_, gi) => {
     const from = nameCols[gi];
-    const to = gi === 0 ? nameCols[1] - 1 : maxCol;
+    const to = (gi + 1 < nameCols.length) ? nameCols[gi + 1] - 1 : maxCol;
     const map = {};
     for(let c = from; c <= to; c++){
       const label = String(rows[headerRow][c] ?? '').trim();
@@ -1158,7 +1193,7 @@ function parseScheduleGrid(sm, year){
     if(String(rows[r][nameCols[0]] ?? '').trim() === '姓名') continue;   /* 每日重複的表頭 */
     let slot = impParseSlot(rows[r][timeCol]);
     if(!slot && slotAt[r]) slot = slotAt[r];
-    for(let gi = 0; gi < 2; gi++){
+    for(let gi = 0; gi < groups.length; gi++){
       const g = groups[gi];
       const gv = k => g.map[k] != null ? impCellStr(rows[r][g.map[k]]) : '';
       const name = gv('name');
@@ -1219,7 +1254,8 @@ async function impReparse(){
   $('#imp-confirm').disabled = true;
   try{
     const sm = await impWb.readSheet(+$('#imp-sheet').value || 0);
-    impParsed = parseScheduleGrid(sm, +$('#imp-year').value);
+    impParsed = parseScheduleGrid(sm, +$('#imp-year').value, siteRooms().length);
+    impParsed.cases.forEach(c => { c.site = site; });   /* 匯入到目前檢視的院區 */
     renderImpPreview(impParsed);
   }catch(err){
     $('#imp-summary').innerHTML = `<div class="imp-error">${esc(err.message)}</div>`;
@@ -1228,9 +1264,9 @@ async function impReparse(){
 }
 /* 逐筆比對現有排程：將匯入 / 重複略過 / 時段衝突略過（含本次匯入彼此間的衝突） */
 function impEvaluate(parsedCases){
-  /* 佔格判定只看未取消的排程；重複判定含已取消（避免匯入時讓被劃線取消的病人復活） */
-  const virtual = state.cases.filter(o => !o.cancelledAt).map(o => ({date:o.date, room:o.room, slot:o.slot, span:o.span, name:o.name}));
-  const sameKey = (o, pc) => o.date === pc.date && o.room === pc.room && o.slot === pc.slot && o.name === pc.name;
+  /* 佔格判定只看「本院區」未取消的排程；重複判定含已取消（避免匯入時讓被劃線取消的病人復活） */
+  const virtual = state.cases.filter(o => !o.cancelledAt && (o.site || 'hc') === site).map(o => ({date:o.date, room:o.room, slot:o.slot, span:o.span, name:o.name}));
+  const sameKey = (o, pc) => (o.site || 'hc') === ((pc.site || 'hc')) && o.date === pc.date && o.room === pc.room && o.slot === pc.slot && o.name === pc.name;
   return parsedCases.map(pc => {
     const dupHit = state.cases.find(o => sameKey(o, pc));
     if(dupHit || virtual.some(o => sameKey(o, pc)))
@@ -1243,7 +1279,7 @@ function impEvaluate(parsedCases){
     });
     if(clash) return {c: pc, status: 'conflict', clashName: clash.name};
     virtual.push({date: pc.date, room: pc.room, slot: pc.slot, span: pc.span, name: pc.name});
-    const sameName = state.cases.some(o => o.date === pc.date && o.name === pc.name && (o.room !== pc.room || o.slot !== pc.slot));
+    const sameName = state.cases.some(o => (o.site || 'hc') === site && o.date === pc.date && o.name === pc.name && (o.room !== pc.room || o.slot !== pc.slot));
     return {c: pc, status: 'add', sameName};
   });
 }
@@ -1253,7 +1289,8 @@ function renderImpPreview(p){
   const nAdd = ev.filter(e => e.status === 'add').length;
   const nDup = ev.filter(e => e.status === 'dup').length;
   const nCon = ev.filter(e => e.status === 'conflict').length;
-  $('#imp-summary').innerHTML = `<div class="imp-ok">偵測到 <b>${p.days}</b> 天、<b>${p.cases.length}</b> 筆：將匯入 <b>${nAdd}</b> 筆${nDup ? '、重複略過 ' + nDup + ' 筆' : ''}${nCon ? '、<span class="st-con">時段衝突略過 ' + nCon + ' 筆</span>' : ''}　（Excel 左側「${esc(p.roomNames[0] || '?')}」→ ${esc(state.roomNames[0])}；右側「${esc(p.roomNames[1] || '?')}」→ ${esc(state.roomNames[1])}）</div>`;
+  const mapping = p.roomNames.map((n, i) => (p.roomNames.length > 1 ? (i === 0 ? '左側' : '右側') : '') + '「' + esc(n || '?') + '」→ ' + esc(siteRoomName(i))).join('；');
+  $('#imp-summary').innerHTML = `<div class="imp-ok">將匯入至【<b>${esc(SITES[site].label)}</b>】：偵測到 <b>${p.days}</b> 天、<b>${p.cases.length}</b> 筆：將匯入 <b>${nAdd}</b> 筆${nDup ? '、重複略過 ' + nDup + ' 筆' : ''}${nCon ? '、<span class="st-con">時段衝突略過 ' + nCon + ' 筆</span>' : ''}　（Excel ${mapping}）</div>`;
   $('#imp-warnings').innerHTML = p.warnings.length ? `<div class="imp-warn">${p.warnings.map(w => '⚠ ' + esc(w)).join('<br>')}</div>` : '';
   const LIMIT = 300;
   const trs = ev.slice(0, LIMIT).map(e => {
@@ -1268,7 +1305,7 @@ function renderImpPreview(p){
     <td>${st}</td>
     <td>${c.date}（${WEEKNAMES[new Date(c.date + 'T00:00:00').getDay()].slice(2)}）</td>
     <td>${slotLabel(c.slot)}${c.span > 1 ? ' ×' + c.span : ''}</td>
-    <td>${esc(state.roomNames[c.room])}</td>
+    <td>${esc(siteRoomName(c.room))}</td>
     <td>${esc(c.name)}</td><td>${esc(c.chartNo)}</td><td>${esc(c.birthday)}</td><td>${esc(c.sex)}</td>
     <td>${esc(c.procedure)}</td><td>${esc(c.physician)}</td><td>${esc(c.bed)}</td><td>${esc(c.detail)}</td><td>${esc(c.note)}</td>
   </tr>`;
@@ -1334,7 +1371,7 @@ $('#imp-confirm').onclick = async () => {
     toast('⚠ 已匯入 ' + adds.length + ' 筆，但寫入失敗！請先別關閉視窗，恢復連線後任意儲存一筆即可重寫');
     return;
   }
-  toast('已匯入 ' + adds.length + ' 筆'
+  toast('已匯入至' + SITES[site].label + ' ' + adds.length + ' 筆'
     + (dup ? '，略過重複 ' + dup + ' 筆' : '')
     + (conflict ? '，略過時段衝突 ' + conflict + ' 筆' : '')
     + (hiddenDay ? '；其中 ' + hiddenDay + ' 筆在未顯示的週六/週日（可至「⚙ 設定」開啟顯示）' : ''));
@@ -1379,6 +1416,7 @@ function cloudMetaFromState(){
   return {
     app: 'cathlab-schedule', version: 2,
     roomNames: state.roomNames,
+    bmRoomName: state.bmRoomName || 'SIEMENS',
     showSat: !!state.showSat, showSun: !!state.showSun,
     options: state.options,
     updatedAt: new Date().toISOString(),
@@ -1388,6 +1426,7 @@ function applyCloudMeta(m){
   metaRev++;
   const merged = migrate(Object.assign({}, m, {cases: []}));
   state.roomNames = merged.roomNames;
+  state.bmRoomName = merged.bmRoomName;
   state.showSat = merged.showSat;
   state.showSun = merged.showSun;
   state.options = merged.options;
@@ -1630,6 +1669,16 @@ $('#grid').addEventListener('click', e => {
   const t = e.target.closest('td.empty');
   if(t) openCaseModal(null, t.dataset);
 });
+
+function setSite(s){
+  if(site === s) return;
+  site = s;
+  try{ localStorage.setItem('cathlab-site', s); }catch(e){}
+  render();
+  toast('已切換至 ' + SITES[s].label);
+}
+$('#site-hc').onclick = () => setSite('hc');
+$('#site-bm').onclick = () => setSite('bm');
 
 $('#prevWeek').onclick = () => { weekStart = addDays(weekStart,-7); $('#jumpDate').value = ymd(weekStart); render(); };
 $('#nextWeek').onclick = () => { weekStart = addDays(weekStart, 7); $('#jumpDate').value = ymd(weekStart); render(); };
