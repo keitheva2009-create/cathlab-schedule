@@ -387,7 +387,7 @@ td.filled.clash{box-shadow:inset 0 0 0 2px #e53935}
     <div id="st-cloud-section">
       <p class="st-cloud-title">☁ 輸入團隊金鑰開始使用</p>
       <div class="st-cloud">
-        <input id="st-key" placeholder="貼上 48 碼團隊金鑰" autocomplete="off" spellcheck="false">
+        <input id="st-key" placeholder="輸入團隊金鑰（例：ABCD-EFGH-JKMN）" autocomplete="off" spellcheck="false">
         <button id="st-cloud-connect">連線</button>
       </div>
       <p class="hint">金鑰請向排程負責人索取（存放於 Dropbox「心導管排程」資料夾的「團隊金鑰.txt」）<br>只需輸入一次，此裝置之後會自動連線。</p>
@@ -1383,11 +1383,21 @@ let backupDirHandle;          /* 每日備份資料夾 handle（undefined=尚未
 
 function cloudAvailable(){ return !!FIREBASE_CONFIG; }
 
-function newTeamKey(){
+function newTeamKey(len){
+  len = len || 12;
   const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789';
-  const a = new Uint32Array(48);
+  const a = new Uint32Array(len);
   crypto.getRandomValues(a);
   return [...a].map(x => chars[x % chars.length]).join('');
+}
+/* 金鑰輸入正規化：去除空白與連字號；有效長度 12（新）或 48（舊） */
+function normalizeKey(input){
+  const k = String(input || '').replace(/[\s\-–—]/g, '');
+  return (k.length === 12 || k.length === 48) ? k : null;
+}
+/* 顯示用：12 碼金鑰以 XXXX-XXXX-XXXX 呈現，好讀好抄 */
+function fmtKey(k){
+  return (k && k.length === 12) ? k.slice(0,4) + '-' + k.slice(4,8) + '-' + k.slice(8) : k;
 }
 
 function loadFirebase(){
@@ -1446,8 +1456,13 @@ async function connectCloud(key, opts){
   }
   const metaRef = fsM.doc(db, 'teams', key, 'meta', 'settings');
   const snap = await fsM.getDoc(metaRef);
+  /* 金鑰已搬家（例如縮短金鑰後）：自動轉接到新金鑰 */
+  if(snap.exists() && typeof snap.data().movedTo === 'string' && !opts._hopped){
+    const nk = normalizeKey(snap.data().movedTo);
+    if(nk) return connectCloud(nk, {_hopped: true});
+  }
   if(!snap.exists()){
-    if(!opts.allowNew) throw new Error('這組金鑰查無雲端排程，請確認是否完整複製（共 48 碼）');
+    if(!opts.allowNew) throw new Error('這組金鑰查無雲端排程，請確認是否完整輸入（12 碼，可含連字號）');
     await fsM.setDoc(metaRef, cloudMetaFromState());
   }
   if(cloud && cloud.unsubs) cloud.unsubs.forEach(u => { try{ u(); }catch(e){} });
@@ -1689,7 +1704,7 @@ $('#btnSettings').onclick = openSettings;
 $('#btnShare').onclick = async () => {
   let msg = '心導管室排程系統\n👉 點此開啟：https://keitheva2009-create.github.io/cathlab-schedule/\n（請用 Chrome 或 Edge）';
   if(mode === 'cloud' && cloud){
-    msg += '\n開啟後貼上這組團隊金鑰即可看到排程（請勿外流給團隊以外的人）：\n' + cloud.key;
+    msg += '\n開啟後輸入這組團隊金鑰即可看到排程（請勿外流給團隊以外的人）：\n' + fmtKey(cloud.key);
   }else{
     msg += '\n第一次開啟請點「開啟現有資料檔…」，選擇 Dropbox「心導管排程」資料夾中的排程資料檔（需先加入該 Dropbox 共享資料夾）';
   }
@@ -1776,8 +1791,8 @@ $('#s-importFile').onchange = async e => {
 
 /* --- 雲端資料庫事件 --- */
 async function stCloudConnect(){
-  const key = $('#st-key').value.trim();
-  if(key.length !== 48){ alert('金鑰應為 48 碼（目前 ' + key.length + ' 碼），請確認是否完整複製'); return; }
+  const key = normalizeKey($('#st-key').value);
+  if(!key){ alert('金鑰格式不對：應為 12 碼（可含連字號，例如 ABCD-EFGH-JKMN），請確認是否完整輸入'); return; }
   $('#st-cloud-connect').disabled = true;
   try{
     await connectCloud(key);
@@ -1789,7 +1804,7 @@ $('#st-cloud-connect').onclick = stCloudConnect;
 $('#st-key').addEventListener('keydown', e => { if(e.key === 'Enter') stCloudConnect(); });
 
 $('#cloud-enable').onclick = async () => {
-  if(!confirm('啟用雲端資料庫？\n\n．會產生一組 48 碼團隊金鑰（同事憑金鑰共用排程）\n．目前畫面中的排程（' + state.cases.length + ' 筆）與選單會上傳到雲端\n．資料存放於 Google Firestore 台灣機房\n．原本的 Dropbox 資料檔會保留，不受影響')) return;
+  if(!confirm('啟用雲端資料庫？\n\n．會產生一組 12 碼團隊金鑰（同事憑金鑰共用排程）\n．目前畫面中的排程（' + state.cases.length + ' 筆）與選單會上傳到雲端\n．資料存放於 Google Firestore 台灣機房\n．原本的 Dropbox 資料檔會保留，不受影響')) return;
   const key = newTeamKey();
   $('#settingsModal').classList.add('hidden');
   try{
@@ -1803,8 +1818,8 @@ $('#cloud-enable').onclick = async () => {
 };
 $('#cloud-copykey').onclick = async () => {
   if(!cloud) return;
-  try{ await navigator.clipboard.writeText(cloud.key); toast('已複製團隊金鑰'); }
-  catch(e){ prompt('請手動複製團隊金鑰：', cloud.key); }
+  try{ await navigator.clipboard.writeText(fmtKey(cloud.key)); toast('已複製團隊金鑰'); }
+  catch(e){ prompt('請手動複製團隊金鑰：', fmtKey(cloud.key)); }
 };
 $('#cloud-backupdir').onclick = async () => {
   try{
@@ -1833,9 +1848,10 @@ $('#cloud-leave').onclick = async () => {
   location.reload();
 };
 $('#cloud-join').onclick = async () => {
-  const key = (prompt('請貼上 48 碼團隊金鑰：') || '').trim();
-  if(!key) return;
-  if(key.length !== 48){ alert('金鑰應為 48 碼（目前 ' + key.length + ' 碼），請確認是否完整複製'); return; }
+  const raw = prompt('請輸入團隊金鑰（12 碼，可含連字號）：');
+  if(!raw) return;
+  const key = normalizeKey(raw);
+  if(!key){ alert('金鑰格式不對，請確認是否完整輸入'); return; }
   $('#settingsModal').classList.add('hidden');
   try{ await connectCloud(key); toast('☁ 已連線雲端排程'); }
   catch(e){ alert('連線失敗：' + e.message); }
@@ -1859,8 +1875,8 @@ document.addEventListener('keydown', e => {
   }
   /* 有記住的團隊金鑰就自動連線；否則停在金鑰輸入畫面 */
   let savedKey = null;
-  try{ savedKey = localStorage.getItem('cathlab-teamkey'); }catch(e){}
-  if(savedKey && savedKey.length === 48){
+  try{ savedKey = normalizeKey(localStorage.getItem('cathlab-teamkey')); }catch(e){}
+  if(savedKey){
     try{ await connectCloud(savedKey); return; }
     catch(e){
       $('#st-key').value = savedKey;
