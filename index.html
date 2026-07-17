@@ -33,7 +33,6 @@ body{
   display:flex; align-items:center; gap:8px; flex-wrap:wrap;
   padding:8px 12px; border-bottom:1px solid #ddd; background:#fafafa;
 }
-#toolbar h1{font-size:17px; margin:0 10px 0 0; white-space:nowrap}
 #toolbar .sub{color:#888; font-size:12px; white-space:nowrap}
 #toolbar button{
   padding:5px 10px; border:1px solid #bbb; border-radius:6px; background:#fff;
@@ -68,6 +67,7 @@ body{
 #grid thead th.corner{left:0; z-index:7}
 #grid thead th.h-day{left:0; z-index:7}
 #grid thead th.h-time{left:32px; z-index:7}
+#grid thead th.h-day, #grid thead th.h-time{font-size:11px; padding:2px 1px; text-align:center}
 
 td.daycell{
   position:sticky; left:0; z-index:3; background:#fafafa;
@@ -288,7 +288,6 @@ td.filled.clash{box-shadow:inset 0 0 0 2px #e53935}
   <button id="site-bm" class="site-btn">生醫醫院</button>
 </div>
 <header id="toolbar">
-  <h1>心導管室排程</h1>
   <button id="prevWeek">◀ 上週</button>
   <button id="todayBtn">本日</button>
   <button id="nextWeek">下週 ▶</button>
@@ -438,11 +437,11 @@ const WEEKNAMES = ['星期日','星期一','星期二','星期三','星期四','
 const COLS = [
   {k:'name',      label:'姓名',     w:104},
   {k:'chartNo',   label:'病歷號',   w:90},
-  {k:'birthday',  label:'生日',     w:100},
+  {k:'birthday',  label:'生日',     w:88},   /* 需容納 10 碼身分證號，再窄會被裁切 */
   {k:'sex',       label:'性別',     w:46},
   {k:'procedure', label:'術式',     w:80},
-  {k:'physician', label:'醫師',     w:80},
-  {k:'bed',       label:'床號/醫院', w:110},
+  {k:'physician', label:'醫師',     w:56},
+  {k:'bed',       label:'床號/醫院', w:76},
   {k:'detail',    label:'細項',     w:90},
   {k:'note',      label:'備註',     w:170},
 ];
