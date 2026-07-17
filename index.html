@@ -45,6 +45,40 @@ body{
 #btnUndo:not(:disabled):hover{background:#fff3cd}
 #weekLabel{font-weight:bold; margin:0 4px; white-space:nowrap}
 #jumpDate{padding:4px; border:1px solid #bbb; border-radius:6px; font-family:inherit}
+
+/* ---------- 搜尋 ---------- */
+#searchWrap{position:relative; display:inline-flex; align-items:center}
+#searchBox{
+  width:230px; padding:5px 26px 5px 8px; border:1px solid #bbb; border-radius:6px;
+  font-family:inherit; font-size:13px;
+}
+#searchBox:focus{outline:none; border-color:#1a56a8; width:280px}
+#searchClear{
+  position:absolute; right:3px; border:none !important; background:none !important;
+  color:#999; padding:2px 5px !important; font-size:12px; cursor:pointer;
+}
+#searchClear:hover{color:#c62828}
+#searchResults{
+  position:absolute; top:32px; left:0; z-index:60; width:420px; max-height:65vh; overflow:auto;
+  background:#fff; border:1px solid #ccc; border-radius:8px; box-shadow:0 8px 26px rgba(0,0,0,.25);
+}
+.sr-item{padding:7px 10px; border-bottom:1px solid #f0f0f0; cursor:pointer; font-size:12.5px; line-height:1.5}
+.sr-item:hover{background:#eef5ff}
+.sr-when{color:#1a56a8; font-weight:bold}
+.sr-who{color:#222}
+.sr-what{color:#777; font-size:12px}
+.sr-empty, .sr-more{padding:10px; color:#888; font-size:12.5px; text-align:center}
+.sr-cxl{color:#9aa0a6; text-decoration:line-through}
+.sr-live{color:#c62828; font-weight:bold}
+.sr-done{color:#2e7d32; font-weight:bold}
+.sr-site{display:inline-block; padding:0 5px; border-radius:4px; font-size:11px; color:#fff}
+.sr-site.hc{background:#1a56a8}
+.sr-site.bm{background:#00796b}
+
+/* 搜尋定位後的閃爍提示 */
+@keyframes flashHit{0%,100%{box-shadow:inset 0 0 0 0 rgba(255,193,7,0)}35%,65%{box-shadow:inset 0 0 0 3px #ffb300}}
+td.flash{animation:flashHit 1.2s ease-in-out 3}
+span.flash-cxl{background:#ffe082; border-radius:4px}
 .spacer{flex:1}
 #saveStatus{color:#1b7a43; font-size:12px; white-space:nowrap}
 #banner{
@@ -295,6 +329,11 @@ td.filled.clash{box-shadow:inset 0 0 0 2px #e53935}
   <button id="nextWeek">下週 ▶</button>
   <input type="date" id="jumpDate" title="跳至指定日期之週">
   <span id="weekLabel"></span>
+  <span id="searchWrap">
+    <input id="searchBox" placeholder="🔍 搜尋姓名／病歷號／醫師／術式…" autocomplete="off" spellcheck="false">
+    <button id="searchClear" class="hidden" title="清除">✕</button>
+    <div id="searchResults" class="hidden"></div>
+  </span>
   <span class="sub">點空白格新增／點個案可編輯／<b>長按個案可拖曳移動</b></span>
   <span class="spacer"></span>
   <span id="saveStatus"></span>
@@ -706,6 +745,8 @@ function render(){
   grid.style.width = tableWidth() + 'px';
   grid.innerHTML = colgroupHtml() + theadHtml() + days.map(d=>tbodyHtml(d)).join('');
   refreshDatalists();
+  /* 搜尋結果開啟中 → 同步更新（其他電腦的異動也會反映） */
+  if(!$('#searchResults').classList.contains('hidden')) renderSearch();
 }
 
 function colgroupHtml(){
@@ -1769,6 +1810,96 @@ async function doUndo(){
   }
 }
 
+/* ================= 搜尋（跨院區、跨所有日期） ================= */
+const SEARCH_FIELDS = ['name','chartNo','birthday','procedure','physician','bed','detail','note'];
+const SEARCH_LIMIT = 60;
+
+function searchCases(q){
+  q = String(q || '').trim().toLowerCase();
+  if(!q) return [];
+  const terms = q.split(/\s+/);   /* 空白分隔＝且條件，例如「林彥良 EPS」 */
+  const hits = state.cases.filter(c =>
+    terms.every(t => SEARCH_FIELDS.some(k => String(c[k] || '').toLowerCase().includes(t))));
+  const bySlot = (a, b) => DAY_SLOTS.indexOf(a.slot) - DAY_SLOTS.indexOf(b.slot);
+  const today = ymd(new Date());
+  const future = hits.filter(c => c.date >= today).sort((a, b) => a.date.localeCompare(b.date) || bySlot(a, b));
+  const past = hits.filter(c => c.date < today).sort((a, b) => b.date.localeCompare(a.date) || bySlot(b, a));
+  return future.concat(past);   /* 今天與未來（近→遠）在前，過去（近→遠）在後 */
+}
+
+function renderSearch(){
+  const q = $('#searchBox').value;
+  const panel = $('#searchResults');
+  $('#searchClear').classList.toggle('hidden', !q);
+  if(!q.trim()){ panel.classList.add('hidden'); panel.innerHTML = ''; return; }
+  const hits = searchCases(q);
+  if(!hits.length){
+    panel.innerHTML = '<div class="sr-empty">找不到符合的排程</div>';
+    panel.classList.remove('hidden');
+    return;
+  }
+  panel.innerHTML = hits.slice(0, SEARCH_LIMIT).map(c => {
+    const s = c.site === 'bm' ? 'bm' : 'hc';
+    const d = new Date(c.date + 'T00:00:00');
+    const st = c.cancelledAt ? '<span class="sr-cxl">已取消</span>'
+      : (c.startedAt && !c.endedAt) ? '<span class="sr-live">● 手術中</span>'
+      : c.endedAt ? '<span class="sr-done">✔ 完成</span>' : '';
+    const room = s === 'bm' ? (state.bmRoomName || 'SIEMENS') : (state.roomNames[c.room] || '');
+    return `<div class="sr-item" data-id="${esc(c.id)}" data-site="${s}" data-date="${esc(c.date)}">
+      <div class="sr-when">${md(d)}（${WEEKNAMES[d.getDay()].slice(2)}）${slotLabel(c.slot)}${(c.span || 1) > 1 ? '～' + spanLabel(c.span) : ''}</div>
+      <div class="sr-who"><b>${esc(c.name || '(未填姓名)')}</b> ${esc(c.chartNo || '')} ${st}</div>
+      <div class="sr-what"><span class="sr-site ${s}">${s === 'bm' ? '生醫' : '新竹'}</span> ${esc(room)}　${esc(c.procedure || '')} ${esc(c.physician || '')} ${esc(c.detail || '')}</div>
+    </div>`;
+  }).join('') + (hits.length > SEARCH_LIMIT ? `<div class="sr-more">共 ${hits.length} 筆，僅顯示前 ${SEARCH_LIMIT} 筆</div>` : '');
+  panel.classList.remove('hidden');
+}
+
+function closeSearch(){ $('#searchResults').classList.add('hidden'); }
+
+/* 跳到該排程：切換院區→跳週→捲到位置→閃爍提示 */
+function gotoCase(id, cSite, date){
+  closeSearch();
+  if(site !== cSite){ site = cSite; try{ localStorage.setItem('cathlab-site', cSite); }catch(e){} }
+  weekStart = mondayOf(new Date(date + 'T00:00:00'));
+  $('#jumpDate').value = date;
+  render();
+  const tds = [...document.querySelectorAll('td.filled')].filter(x => x.dataset.id === id);
+  if(tds.length){
+    tds[0].scrollIntoView({block: 'center', inline: 'center'});
+    tds.forEach(td => { td.classList.add('flash'); setTimeout(() => td.classList.remove('flash'), 3600); });
+    return;
+  }
+  const alt = [...document.querySelectorAll('span.cxl')].find(x => x.dataset.cxlId === id)
+           || [...document.querySelectorAll('span.dup')].find(x => x.dataset.id === id);
+  if(alt){
+    alt.scrollIntoView({block: 'center', inline: 'center'});
+    alt.classList.add('flash-cxl');
+    setTimeout(() => alt.classList.remove('flash-cxl'), 3600);
+    return;
+  }
+  const wd = new Date(date + 'T00:00:00').getDay();
+  toast((wd === 6 || wd === 0) ? '該排程在' + WEEKNAMES[wd] + '，目前未顯示；可至「⚙ 設定」開啟' : '已跳到該週，但畫面上找不到這筆排程');
+}
+
+$('#searchBox').addEventListener('input', renderSearch);
+$('#searchBox').addEventListener('focus', () => { if($('#searchBox').value.trim()) renderSearch(); });
+$('#searchBox').addEventListener('keydown', e => {
+  if(e.isComposing) return;
+  if(e.key === 'Escape'){ closeSearch(); $('#searchBox').blur(); }
+  else if(e.key === 'Enter'){
+    const first = $('#searchResults').querySelector('.sr-item');
+    if(first) gotoCase(first.dataset.id, first.dataset.site, first.dataset.date);
+  }
+});
+$('#searchClear').onclick = () => { $('#searchBox').value = ''; renderSearch(); $('#searchBox').focus(); };
+$('#searchResults').addEventListener('click', e => {
+  const it = e.target.closest('.sr-item');
+  if(it) gotoCase(it.dataset.id, it.dataset.site, it.dataset.date);
+});
+document.addEventListener('pointerdown', e => {   /* 點擊他處關閉結果清單 */
+  if(!e.target.closest('#searchWrap')) closeSearch();
+});
+
 /* ================= 長按拖曳：移動排程到別的時段／導管室 ================= */
 const LONGPRESS_MS = 450, DRAG_TOL = 8;
 let drag = null;
@@ -2116,6 +2247,7 @@ $('#cloud-join').onclick = async () => {
 document.addEventListener('keydown', e => {
   if(e.key === 'Escape'){
     if(drag){ dragCleanup(); return; }   /* 拖曳中 → 取消移動 */
+    if(!$('#searchResults').classList.contains('hidden')){ closeSearch(); return; }
     if(!$('#caseModal').classList.contains('hidden')) closeCaseModal();
     else if(!$('#settingsModal').classList.contains('hidden')){ $('#settingsModal').classList.add('hidden'); render(); }
     else if(!$('#importModal').classList.contains('hidden')) $('#importModal').classList.add('hidden');
