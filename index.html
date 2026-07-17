@@ -40,6 +40,9 @@ body{
   cursor:pointer; font-size:13px; font-family:inherit;
 }
 #toolbar button:hover{background:#f0f0f0}
+#toolbar button:disabled{opacity:.38; cursor:default; background:#fff}
+#btnUndo:not(:disabled){border-color:#b26a00; color:#b26a00; font-weight:bold}
+#btnUndo:not(:disabled):hover{background:#fff3cd}
 #weekLabel{font-weight:bold; margin:0 4px; white-space:nowrap}
 #jumpDate{padding:4px; border:1px solid #bbb; border-radius:6px; font-family:inherit}
 .spacer{flex:1}
@@ -288,16 +291,15 @@ td.filled.clash{box-shadow:inset 0 0 0 2px #e53935}
   <h1>心導管室排程</h1>
   <button id="prevWeek">◀ 上週</button>
   <button id="thisWeek">本週</button>
+  <button id="todayBtn">本日</button>
   <button id="nextWeek">下週 ▶</button>
   <input type="date" id="jumpDate" title="跳至指定日期之週">
   <span id="weekLabel"></span>
   <span class="sub">點空白格新增／點個案可編輯／<b>長按個案可拖曳移動</b></span>
   <span class="spacer"></span>
   <span id="saveStatus"></span>
-  <button id="btnImportXlsx">📥 匯入Excel</button>
-  <button id="btnShare">🔗 分享</button>
+  <button id="btnUndo" disabled>↩ 復原</button>
   <button id="btnSettings">⚙ 設定</button>
-  <button id="btnPrint">🖨 列印</button>
 </header>
 
 <div id="banner" class="hidden"></div>
@@ -917,9 +919,17 @@ function saveCase(){
     .forEach(([k, v]) => { if(learnOption(k, v)) (added[k] = added[k] || []).push(v); });
   if(editing){
     const live = state.cases.find(x => x.id === editing.id);   /* 同步可能已置換 state，改以 id 定位 */
+    const before = snapOf(live || editing);
     if(live) Object.assign(live, c); else state.cases.push(c);
+    const label = (!before.cancelledAt && c.cancelledAt) ? '取消「' + c.name + '」'
+      : (before.cancelledAt && !c.cancelledAt) ? '恢復「' + c.name + '」'
+      : (before.startedAt !== c.startedAt || before.endedAt !== c.endedAt) ? '手術時間「' + c.name + '」'
+      : '修改「' + c.name + '」';
+    pushUndo(label, () => upsertCase(before));
   }else{
     state.cases.push(c);
+    const nid = c.id;
+    pushUndo('新增「' + c.name + '」', () => removeCaseById(nid));
   }
   closeCaseModal();
   if(mode === 'cloud'){ cloudWriteCase(c); cloudLearnOptions(added); }
@@ -936,12 +946,13 @@ function deleteCase(){
   if(!editing) return;
   const hint = editing.cancelledAt ? '' : '\n（若想保留劃線紀錄讓大家知道原本有排，請改用「✂ 取消排程」）';
   if(!confirm('確定「永久」刪除「' + (editing.name||'') + '」這筆排程？將不留任何紀錄。' + hint)) return;
-  const delId = editing.id;
+  const delId = editing.id, delSnap = snapOf(state.cases.find(c => c.id === delId) || editing);
   state.cases = state.cases.filter(c => c.id !== delId);
   closeCaseModal();
   if(mode === 'cloud') cloudDeleteCase(delId);
   else persist();
   render();
+  pushUndo('刪除「' + delSnap.name + '」', () => upsertCase(delSnap));
 }
 
 /* ================= 設定 ================= */
@@ -990,6 +1001,8 @@ function saveSettings(){
   if(mode === 'cloud' && openSettings._rev !== metaRev
      && !confirm('提醒：你編輯設定期間，其他電腦也修改過設定或選單。\n按「確定」將以你目前畫面的內容覆蓋對方的修改。')) return;
   const lines = v => v.split(/\r?\n/).map(x=>x.trim()).filter(Boolean);
+  const beforeMeta = {roomNames: [...state.roomNames], bmRoomName: state.bmRoomName,
+    showSat: state.showSat, showSun: state.showSun, options: snapOf(state.options)};
   state.roomNames = [$('#s-room0').value.trim() || '導管室1', $('#s-room1').value.trim() || '導管室2'];
   state.bmRoomName = $('#s-room-bm').value.trim() || 'SIEMENS';
   state.showSat = $('#s-sat').checked;
@@ -1002,6 +1015,11 @@ function saveSettings(){
   if(mode === 'cloud') cloudWriteMeta();
   else persist();
   render();
+  pushUndo('修改設定', () => {
+    Object.assign(state, beforeMeta);
+    if(mode === 'cloud') cloudWriteMeta(); else persist();
+    refreshDatalists();
+  });
 }
 
 /* ================= Excel (.xlsx) 匯入 ================= */
@@ -1353,7 +1371,6 @@ function renderImpPreview(p){
   $('#imp-confirm').textContent = nAdd ? '匯入 ' + nAdd + ' 筆' : '匯入';
 }
 
-$('#btnImportXlsx').onclick = openImportModal;
 $('#imp-pick').onclick = () => $('#imp-file').click();
 $('#imp-file').onchange = async e => {
   const f = e.target.files[0]; if(!f) return;
@@ -1575,6 +1592,7 @@ async function cloudReplaceAll(newState){
   const {fsM, db, key} = cloud;
   const oldIds = state.cases.map(c => c.id);
   state.roomNames = newState.roomNames;
+  state.bmRoomName = newState.bmRoomName || state.bmRoomName;
   state.showSat = newState.showSat;
   state.showSun = newState.showSun;
   state.options = newState.options;
@@ -1709,6 +1727,48 @@ function exportBackup(){
 }
 
 /* ================= 事件 ================= */
+/* ================= 復原上一個動作 ================= */
+const UNDO_MAX = 30;
+let undoStack = [];
+function snapOf(o){ return JSON.parse(JSON.stringify(o)); }
+function writeCase(c){ if(mode === 'cloud') cloudWriteCase(c); else persist(); }
+function upsertCase(c){
+  const i = state.cases.findIndex(x => x.id === c.id);
+  if(i >= 0) state.cases[i] = c; else state.cases.push(c);
+  writeCase(c);
+}
+function removeCaseById(id){
+  state.cases = state.cases.filter(x => x.id !== id);
+  if(mode === 'cloud') cloudDeleteCase(id); else persist();
+}
+function updateUndoBtn(){
+  const b = $('#btnUndo');
+  const top = undoStack[undoStack.length - 1];
+  b.disabled = !top;
+  b.title = top ? ('復原：' + top.label) : '沒有可復原的動作';
+}
+function pushUndo(label, fn){
+  undoStack.push({label, fn});
+  if(undoStack.length > UNDO_MAX) undoStack.shift();
+  updateUndoBtn();
+}
+/* fn 回傳字串＝無法復原的原因（該筆會退回堆疊）；否則視為成功 */
+async function doUndo(){
+  const e = undoStack.pop();
+  updateUndoBtn();
+  if(!e){ toast('沒有可以復原的動作'); return; }
+  let r;
+  try{ r = await e.fn(); }
+  catch(err){ r = err.message; }
+  render();
+  if(typeof r === 'string'){
+    undoStack.push(e); updateUndoBtn();
+    toast('無法復原「' + e.label + '」：' + r);
+  }else{
+    toast('已復原：' + e.label);
+  }
+}
+
 /* ================= 長按拖曳：移動排程到別的時段／導管室 ================= */
 const LONGPRESS_MS = 450, DRAG_TOL = 8;
 let drag = null;
@@ -1814,20 +1874,23 @@ function dragActivate(){
 function dragDrop(t){
   const c = state.cases.find(x => x.id === drag.c.id);
   if(!c) return;
-  const from = {date: c.date, room: c.room, slot: c.slot};
+  const id = c.id, from = {date: c.date, room: c.room, slot: c.slot};
   const label = p => md(new Date(p.date + 'T00:00:00')) + ' ' + slotLabel(p.slot) + '（' + siteRoomName(p.room) + '）';
   c.date = t.date; c.room = t.room; c.slot = t.slot;
   if(mode === 'cloud') cloudWriteCase(c); else persist();
   render();
-  toast('已移動「' + c.name + '」→ ' + label(t), {label: '復原', fn: () => {
-    const cc = state.cases.find(x => x.id === c.id);
-    if(!cc){ toast('這筆排程已不存在'); return; }
+  pushUndo('移動「' + c.name + '」', () => {
+    const cc = state.cases.find(x => x.id === id);
+    if(!cc) return '這筆排程已不存在';
     const v = dragValidate(cc, from);
-    if(!v.ok && !v.same){ toast('無法復原：原時段' + (v.msg ? '已被占用（' + v.msg + '）' : '不可用')); return; }
+    if(!v.ok && !v.same) return '原時段' + (v.msg ? '已被占用（' + v.msg + '）' : '不可用');
     cc.date = from.date; cc.room = from.room; cc.slot = from.slot;
-    if(mode === 'cloud') cloudWriteCase(cc); else persist();
-    render();
-    toast('已復原至 ' + label(from));
+    writeCase(cc);
+  });
+  const entry = undoStack[undoStack.length - 1];
+  toast('已移動「' + c.name + '」→ ' + label(t), {label: '復原', fn: () => {
+    if(undoStack[undoStack.length - 1] !== entry){ toast('已有其他變更，請改用上方「↩ 復原」'); return; }
+    doUndo();
   }});
 }
 
@@ -1889,29 +1952,21 @@ $('#site-bm').onclick = () => setSite('bm');
 $('#prevWeek').onclick = () => { weekStart = addDays(weekStart,-7); $('#jumpDate').value = ymd(weekStart); render(); };
 $('#nextWeek').onclick = () => { weekStart = addDays(weekStart, 7); $('#jumpDate').value = ymd(weekStart); render(); };
 $('#thisWeek').onclick = () => { weekStart = mondayOf(new Date()); $('#jumpDate').value = ymd(new Date()); render(); };
-$('#jumpDate').onchange = e => { if(e.target.value){ weekStart = mondayOf(new Date(e.target.value+'T00:00:00')); render(); } };
-$('#btnPrint').onclick = () => window.print();
-$('#btnSettings').onclick = openSettings;
-$('#btnShare').onclick = async () => {
-  let msg = '心導管室排程系統\n👉 點此開啟：https://keitheva2009-create.github.io/cathlab-schedule/\n（請用 Chrome 或 Edge）';
-  if(mode === 'cloud' && cloud){
-    msg += '\n開啟後輸入這組團隊金鑰即可看到排程（請勿外流給團隊以外的人）：\n' + fmtKey(cloud.key);
-  }else{
-    msg += '\n第一次開啟請點「開啟現有資料檔…」，選擇 Dropbox「心導管排程」資料夾中的排程資料檔（需先加入該 Dropbox 共享資料夾）';
-  }
-  try{
-    await navigator.clipboard.writeText(msg);
-    toast('已複製分享訊息，可直接貼給同事');
-  }catch(e){
-    const ta = document.createElement('textarea');
-    ta.value = msg; document.body.appendChild(ta); ta.select();
-    let ok = false;
-    try{ ok = document.execCommand('copy'); }catch(e2){}
-    ta.remove();
-    if(ok) toast('已複製分享訊息，可直接貼給同事');
-    else prompt('自動複製失敗，請手動複製以下內容：', msg);
-  }
+$('#btnUndo').onclick = doUndo;
+$('#todayBtn').onclick = () => {   /* 跳到本週並捲到今天的區塊 */
+  const t = new Date(), key = ymd(t);
+  weekStart = mondayOf(t);
+  $('#jumpDate').value = key;
+  render();
+  const tb = [...document.querySelectorAll('tbody[data-date]')].find(x => x.dataset.date === key);
+  if(!tb){ toast('今天是' + WEEKNAMES[t.getDay()] + '，目前未顯示；可至「⚙ 設定」開啟'); return; }
+  const sc = $('#scroll');
+  const headH = $('#grid thead').getBoundingClientRect().height;
+  const delta = tb.getBoundingClientRect().top - sc.getBoundingClientRect().top - headH - 4;
+  sc.scrollTop += delta;   /* 直接定位：捲動距離常達數千 px，動畫反而看不清 */
 };
+$('#jumpDate').onchange = e => { if(e.target.value){ weekStart = mondayOf(new Date(e.target.value+'T00:00:00')); render(); } };
+$('#btnSettings').onclick = openSettings;
 
 $('#f-slot').onchange = () => refreshSpanSelect();
 $('#f-start').onclick = () => {
@@ -1965,15 +2020,25 @@ $('#s-importFile').onchange = async e => {
   try{
     const incoming = parseAppData(await f.text());
     if(!confirm('匯入將以備份內容覆蓋目前全部排程' + (mode === 'cloud' ? '（雲端資料也會被覆蓋，所有電腦同步生效）' : '') + '：\n目前 ' + state.cases.length + ' 筆 → 匯入後 ' + incoming.cases.length + ' 筆\n確定要匯入？')){ e.target.value = ''; return; }
+    const prevAll = {cases: state.cases.map(snapOf), roomNames: [...state.roomNames], bmRoomName: state.bmRoomName,
+      showSat: state.showSat, showSun: state.showSun, options: snapOf(state.options)};
+    const undoRestore = () => pushUndo('還原備份（' + incoming.cases.length + ' 筆）', async () => {
+      if(mode === 'cloud') await cloudReplaceAll(prevAll);
+      else { Object.assign(state, prevAll); await persist(); }
+      refreshDatalists();
+    });
     if(mode === 'cloud'){
       $('#settingsModal').classList.add('hidden');
       await cloudReplaceAll(incoming);
+      undoRestore();
       render();
       toast('已匯入資料（雲端已更新）');
     }else{
       state = incoming;
       $('#settingsModal').classList.add('hidden');
-      await persist(); render();
+      await persist();
+      undoRestore();
+      render();
       toast('已匯入資料');
     }
   }catch(err){ alert('匯入失敗：' + err.message); }
@@ -2060,6 +2125,7 @@ document.addEventListener('keydown', e => {
 /* ================= 啟動 ================= */
 (async function boot(){
   $('#jumpDate').value = ymd(new Date());
+  updateUndoBtn();
   render();
   if(!cloudAvailable()){
     $('#st-hint').textContent = '⚠ 雲端設定遺失，請聯絡系統維護者。';
