@@ -179,6 +179,8 @@ td.filled.done{background:#d9efdb; color:#1b5e20}
 .me-head{display:flex; align-items:center; gap:10px; margin-bottom:10px}
 .me-head h2{margin:0}
 .me-head button{padding:6px 14px; border:1px solid #bbb; border-radius:6px; background:#fff; cursor:pointer; font-family:inherit}
+#me-logout{border-color:#b26a00; color:#b26a00}
+#me-logout:hover{background:#fff3cd}
 .me-body{display:flex; gap:16px; align-items:flex-start}
 .me-cal-wrap{flex:1 1 60%; min-width:0}
 .me-pend-wrap{flex:1 1 40%; min-width:0; display:flex; flex-direction:column}
@@ -588,6 +590,7 @@ body.modal-open .overlay, body.modal-open .dialog{touch-action:auto}
     <div class="me-head">
       <h2 id="me-title">我的手術排程</h2>
       <span class="spacer"></span>
+      <button id="me-logout">登出</button>
       <button id="me-close">關閉</button>
     </div>
     <div class="me-body">
@@ -2274,6 +2277,14 @@ document.addEventListener('pointerup', () => {
 
 $('#userBadge').onclick = () => { if(currentUser) openMeModal(); };
 $('#me-close').onclick = () => $('#meModal').classList.add('hidden');
+$('#me-logout').onclick = () => {
+  if(!confirm('登出帳號？下次編輯排程前需重新登入。')) return;
+  try{ localStorage.removeItem('cathlab-user'); }catch(e){}
+  currentUser = null; currentName = ''; updateUserBadge();
+  $('#meModal').classList.add('hidden');
+  $('#loginOverlay').classList.remove('hidden');
+  setTimeout(() => $('#lg-id').focus(), 50);
+};
 $('#me-prev').onclick = () => { meMonth = new Date(meMonth.getFullYear(), meMonth.getMonth() - 1, 1); renderMeCal(); };
 $('#me-next').onclick = () => { meMonth = new Date(meMonth.getFullYear(), meMonth.getMonth() + 1, 1); renderMeCal(); };
 $('#me-add').onclick = () => openPendModal(null);
