@@ -108,8 +108,8 @@ td.empty{cursor:pointer; height:29px}
 tr[data-slot] td.timecell{height:29px}
 td.empty:hover{background:#eef5ff}
 tr.extra td.empty:hover{background:#dde8f5}
-/* 病人資料字級（放大兩號；負責醫師列不受影響，另有自己的設定） */
-td.filled{cursor:pointer; vertical-align:middle; -webkit-touch-callout:none; font-size:15px}
+/* 病人資料字級（電腦版）；手機版另有固定設定，改這裡不會影響手機 */
+td.filled{cursor:pointer; vertical-align:middle; -webkit-touch-callout:none; font-size:14px}
 
 /* 長按拖曳移動排程 */
 body.dragging-mode{user-select:none; -webkit-user-select:none; cursor:grabbing}
@@ -138,7 +138,7 @@ td.filled.dragging{opacity:.3}
 td.filled.r0{background:var(--r0-cell)}
 td.filled.r1{background:var(--r1-cell)}
 td.filled.c-name{font-weight:bold}
-td.filled.c-note{white-space:pre-wrap; font-size:14px; color:#555}
+td.filled.c-note{white-space:pre-wrap; font-size:13px; color:#555}
 td.filled:hover{filter:brightness(0.96)}
 
 /* 手術進行中／已完成 標示 */
@@ -250,7 +250,7 @@ td.filled.clash{box-shadow:inset 0 0 0 2px #e53935}
 /* 劃線取消（保留原格） */
 .cxl{
   display:block; text-decoration:line-through; color:#9aa0a6;
-  font-size:14px; font-weight:normal; cursor:pointer;
+  font-size:13px; font-weight:normal; cursor:pointer;
   white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
 }
 .cxl:hover{color:#c62828}
@@ -365,7 +365,7 @@ body.modal-open .overlay, body.modal-open .dialog{touch-action:auto}
 
 /* ---------- print ---------- */
 @page{size:A4 landscape; margin:8mm}
-/* ---------- 手機版：排程表字級縮小兩號（對話框欄位維持 16px，否則 iOS 會自動放大） ---------- */
+/* ---------- 手機版字級：已定案，請勿再更動（對話框欄位須維持 16px，否則 iOS 會自動放大） ---------- */
 @media (max-width:640px){
   /* 用 #grid 前綴確保優先度，否則會被 #grid td 的設定蓋掉 */
   #grid th, #grid td{font-size:11px}
