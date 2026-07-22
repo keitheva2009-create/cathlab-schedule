@@ -1075,9 +1075,13 @@ function refreshSlotSelect(){
 function refreshSexSelect(){
   $('#f-sex').innerHTML = '<option value=""></option>' + (state.options.sex||['M','F']).map(v=>`<option>${esc(v)}</option>`).join('');
 }
+const MOBILE_SPAN_MAX = 3;
 function refreshSpanSelect(keep){
-  const max = maxSpan($('#f-slot').value);
+  const hardMax = maxSpan($('#f-slot').value);
   const cur = keep ?? (+$('#f-span').value || 1);
+  /* 手機版選單最多 3 小時；若這筆原本就更長，保留原值避免誤縮 */
+  const isMobile = (typeof matchMedia === 'function') && matchMedia('(max-width:640px)').matches;
+  const max = isMobile ? Math.min(hardMax, Math.max(MOBILE_SPAN_MAX, cur)) : hardMax;
   $('#f-span').innerHTML = Array.from({length:max},(_,i)=>`<option value="${i+1}">${spanLabel(i+1)}</option>`).join('');
   $('#f-span').value = Math.min(cur, max);
 }
