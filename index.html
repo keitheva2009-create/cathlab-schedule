@@ -86,7 +86,7 @@ tr.lead td.leadcell, tr.lead td.timecell{background:#fff; border-bottom:1px soli
 tr.lead td.timecell{font-weight:bold; color:#555}
 td.leadcell{cursor:pointer; color:#555; font-size:12px; white-space:nowrap}
 td.leadcell:hover{background:#eef5ff}
-td.leadcell b{font-size:13px; color:#222}
+td.leadcell .lead-name{font-size:13px; color:#222; font-weight:normal}
 td.leadcell .lead-empty{color:#bbb}
 
 tr.extra td{background:#e9e9e9}
@@ -94,7 +94,9 @@ tr.extra td.timecell{background:#e2e2e2; font-weight:bold}
 tr.pm-start td{border-top:2px solid #999}
 tbody.day > tr:first-child > td{border-top:3px solid #444}
 
-td.empty{cursor:pointer; height:26px}
+/* 時段列（含加台）列高：26px → 29px（+10%） */
+td.empty{cursor:pointer; height:29px}
+tr[data-slot] td.timecell{height:29px}
 td.empty:hover{background:#eef5ff}
 tr.extra td.empty:hover{background:#dde8f5}
 td.filled{cursor:pointer; vertical-align:top; -webkit-touch-callout:none}
@@ -353,6 +355,23 @@ body.modal-open .overlay, body.modal-open .dialog{touch-action:auto}
 
 /* ---------- print ---------- */
 @page{size:A4 landscape; margin:8mm}
+/* ---------- 手機版：排程表字級縮小兩號（對話框欄位維持 16px，否則 iOS 會自動放大） ---------- */
+@media (max-width:640px){
+  /* 用 #grid 前綴確保優先度，否則會被 #grid td 的設定蓋掉 */
+  #grid th, #grid td{font-size:11px}
+  #grid td.daycell{font-size:11px}
+  #grid td.daycell .d{font-size:9px}
+  #grid td.timecell{font-size:9px}
+  #grid td.leadcell{font-size:10px}
+  #grid td.leadcell .lead-name{font-size:11px}
+  #grid td.filled.c-note{font-size:10px}
+  .op-badge{font-size:9px}
+  .cxl{font-size:10px}
+  .dup{font-size:9.5px}
+  #grid thead tr.rooms th{font-size:12px}
+  #grid thead th.h-day, #grid thead th.h-time{font-size:9px}
+}
+
 /* ---------- 手機版：對話框比滿版略小 ---------- */
 @media (max-width:640px){
   .overlay{padding:10px; align-items:flex-start}
@@ -1050,7 +1069,7 @@ function tbodyHtml(date){
       for(let r = 0; r < R; r++){
         const nm = leadName(key, site, r, row.lead);
         h += `<td class="leadcell${r===1?' rs':''}" colspan="${COLS.length}" data-date="${key}" data-room="${r}" data-sess="${row.lead}"
-          title="時段負責醫師｜點此設定">${nm ? '<b>' + esc(nm) + '</b>' : '<span class="lead-empty">（點此設定負責醫師）</span>'}</td>`;
+          title="時段負責醫師｜點此設定">${nm ? '<span class="lead-name">' + esc(nm) + '</span>' : '<span class="lead-empty">（點此設定負責醫師）</span>'}</td>`;
       }
       h += '</tr>';
       return;
