@@ -172,6 +172,63 @@ td.filled.done{background:#d9efdb; color:#1b5e20}
 #audit-info{margin-top:10px; color:#777; font-size:12px}
 #userBadge{color:#1a56a8; font-weight:bold; font-size:12.5px; white-space:nowrap}
 
+/* 個人手術排程管理 */
+#userBadge{cursor:pointer; padding:2px 6px; border-radius:6px}
+#userBadge:hover{background:#e8f0fe; text-decoration:underline}
+.me-dialog{max-width:1000px; width:100%}
+.me-head{display:flex; align-items:center; gap:10px; margin-bottom:10px}
+.me-head h2{margin:0}
+.me-head button{padding:6px 14px; border:1px solid #bbb; border-radius:6px; background:#fff; cursor:pointer; font-family:inherit}
+.me-body{display:flex; gap:16px; align-items:flex-start}
+.me-cal-wrap{flex:1 1 60%; min-width:0}
+.me-pend-wrap{flex:1 1 40%; min-width:0; display:flex; flex-direction:column}
+.me-cal-bar{display:flex; align-items:center; gap:8px; margin-bottom:6px}
+.me-cal-bar button{padding:3px 10px; border:1px solid #bbb; border-radius:6px; background:#fff; cursor:pointer; font-family:inherit}
+.me-cal-bar b{font-size:15px}
+.me-sub{color:#888; font-size:12px}
+.me-cal{display:grid; grid-template-columns:repeat(7,1fr); gap:3px}
+.me-dow{text-align:center; font-size:11.5px; color:#888; padding:2px 0}
+.me-day{
+  border:1px solid #e0e0e0; border-radius:6px; min-height:54px; padding:3px 4px;
+  font-size:11.5px; cursor:pointer; background:#fff; position:relative;
+}
+.me-day.pad{background:#fafafa; border-color:#f0f0f0; cursor:default}
+.me-day.today{border-color:#f0a000; background:#fffdf3}
+.me-day:not(.pad):hover{background:#eef5ff}
+.me-day.drop-ok{background:#e6f4ea; border-color:#2e7d32; border-width:2px}
+.me-dnum{color:#666}
+.me-day.today .me-dnum{color:#a4660a; font-weight:bold}
+.me-cnt{
+  display:inline-block; margin-top:3px; background:#1a56a8; color:#fff;
+  border-radius:9px; padding:0 6px; font-size:11px; font-weight:bold;
+}
+.me-names{color:#555; line-height:1.35; margin-top:2px; overflow:hidden}
+.me-pend-head{font-weight:bold; font-size:13px; margin-bottom:6px; display:flex; gap:8px; align-items:baseline}
+.me-pend{
+  flex:1; min-height:120px; max-height:52vh; overflow:auto;
+  border:1px solid #e0e0e0; border-radius:8px; padding:6px; background:#fafafa;
+}
+.me-item{
+  background:#fff; border:1px solid #d8d8d8; border-left:4px solid #1a56a8; border-radius:6px;
+  padding:5px 8px; margin-bottom:5px; font-size:12.5px; cursor:grab; touch-action:none;
+}
+.me-item:hover{background:#f4f8ff}
+.me-item.dragging{opacity:.35}
+.me-item b{font-size:13px}
+.me-item .mi-sub{color:#777; font-size:11.5px}
+.me-empty{color:#999; font-size:12.5px; text-align:center; padding:16px 8px; line-height:1.6}
+.me-addbtn{
+  margin-top:8px; padding:8px; border:1px dashed #1a56a8; border-radius:8px;
+  background:#fff; color:#1a56a8; cursor:pointer; font-family:inherit; font-size:13px; font-weight:bold;
+}
+.me-addbtn:hover{background:#eef5ff}
+@media (max-width:860px){
+  .me-body{flex-direction:column}
+  .me-cal-wrap, .me-pend-wrap{flex:1 1 auto; width:100%}
+  .me-pend{max-height:34vh}
+  .me-day{min-height:46px}
+}
+
 /* 時段重疊警示（多台電腦同時排入） */
 .dup{display:block; color:#b3261e; font-size:11.5px; font-weight:bold; cursor:pointer; white-space:nowrap; overflow:hidden; text-overflow:ellipsis}
 .dup:hover{text-decoration:underline}
@@ -497,6 +554,59 @@ td.filled.clash{box-shadow:inset 0 0 0 2px #e53935}
       <span class="spacer"></span>
       <button id="pw-cancel">取消</button>
       <button id="pw-save" class="primary">儲存</button>
+    </div>
+  </div>
+</div>
+
+<!-- 個人手術排程管理 -->
+<div class="overlay hidden" id="meModal">
+  <div class="dialog me-dialog">
+    <div class="me-head">
+      <h2 id="me-title">我的手術排程</h2>
+      <span class="spacer"></span>
+      <button id="me-close">關閉</button>
+    </div>
+    <div class="me-body">
+      <div class="me-cal-wrap">
+        <div class="me-cal-bar">
+          <button id="me-prev">◀</button>
+          <b id="me-month"></b>
+          <button id="me-next">▶</button>
+          <span id="me-count" class="me-sub"></span>
+        </div>
+        <div class="me-cal" id="me-cal"></div>
+        <p class="me-sub">把右側的待排刀「拖到日期上」即可排入該天；點日期可跳到主排程。</p>
+      </div>
+      <div class="me-pend-wrap">
+        <div class="me-pend-head">待排手術（尚未決定日期）<span id="me-pend-count" class="me-sub"></span></div>
+        <div class="me-pend" id="me-pend"></div>
+        <button id="me-add" class="me-addbtn">＋ 新增待排手術</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- 待排手術編輯 -->
+<div class="overlay hidden" id="pendModal">
+  <div class="dialog lg-dialog">
+    <h2 id="pend-title">待排手術</h2>
+    <div class="form-grid">
+      <label class="half">姓名 *<input id="pd-name" autocomplete="off"></label>
+      <label class="half">病歷號<input id="pd-chartNo" autocomplete="off"></label>
+      <label class="half">生日<input id="pd-birthday" placeholder="YYYY/MM/DD" autocomplete="off"></label>
+      <label class="half">性別<select id="pd-sex"></select></label>
+      <label class="half">術式<input id="pd-procedure" list="dl-procedure" autocomplete="off"></label>
+      <label class="half">醫師<input id="pd-physician" list="dl-physician" autocomplete="off"></label>
+      <label class="half">床號/醫院<input id="pd-bed" list="dl-bed" autocomplete="off"></label>
+      <label class="half">細項<input id="pd-detail" list="dl-detail" autocomplete="off"></label>
+      <label class="half">預定院區<select id="pd-site"><option value="hc">新竹醫院</option><option value="bm">生醫醫院</option></select></label>
+      <label class="wide">備註<textarea id="pd-note" rows="2"></textarea></label>
+    </div>
+    <div class="dialog-actions">
+      <button id="pd-delete" class="danger hidden">刪除</button>
+      <span class="spacer"></span>
+      <button id="pd-cancel">取消</button>
+      <button id="pd-save" class="primary">儲存</button>
     </div>
   </div>
 </div>
@@ -1679,6 +1789,7 @@ async function connectCloud(key, opts){
     cloudDataVer = +s.data().version || 1;
     applyCloudMeta(s.data());
     if(!settingsOpen()) render();
+    renderMe();
   }, e => { setStatus('⚠ 雲端連線中斷，自動重試中…'); cloudRetryReconnect(); }));
   /* 監聽全部排程（即時、逐筆同步）；includeMetadataChanges 讓「已同步」狀態在快取→伺服器確認後能更新 */
   cloud.unsubs.push(fsM.onSnapshot(fsM.collection(db, 'teams', key, 'cases'), {includeMetadataChanges: true}, s => {
@@ -1698,6 +1809,13 @@ async function connectCloud(key, opts){
       attemptDailyBackup();   /* 只在拿到伺服器最新資料後才備份 */
     }
   }, e => { setStatus('⚠ 雲端連線中斷，自動重試中…'); toast('雲端連線錯誤：' + e.message); cloudRetryReconnect(); }));
+  /* 監聽待排手術（尚未決定日期的刀） */
+  cloud.unsubs.push(fsM.onSnapshot(fsM.collection(db, 'teams', key, 'pending'), s => {
+    const arr = [];
+    s.forEach(d => arr.push(normPending(d.data())));
+    pending = arr;
+    renderMe();
+  }, e => { /* 待排清單讀取失敗不影響主排程 */ }));
   $('#startOverlay').classList.add('hidden');
   $('#banner').classList.add('hidden');
   render();
@@ -1786,6 +1904,270 @@ async function attemptDailyBackup(force){
     if(force) toast('已備份到指定資料夾');
   }catch(e){ if(force) toast('備份失敗：' + e.message); }
 }
+
+/* ================= 個人手術排程管理（月曆＋待排刀） ================= */
+let pending = [];              /* 待排手術（尚未決定日期） */
+let meMonth = null;            /* 月曆顯示的月份（該月 1 號） */
+let pendEditing = null;        /* 正在編輯的待排項目 */
+
+function normPending(p){
+  const o = {id: String(p.id || '') || uid(), site: p.site === 'bm' ? 'bm' : 'hc'};
+  ['name','chartNo','birthday','sex','procedure','physician','bed','detail','note','createdBy','createdByName','createdAt']
+    .forEach(k => o[k] = typeof p[k] === 'string' ? p[k] : '');
+  return o;
+}
+function cloudWritePending(p){
+  if(mode !== 'cloud' || !cloud) return;
+  const {fsM, db, key} = cloud;
+  fsM.setDoc(fsM.doc(db, 'teams', key, 'pending', p.id), p)
+    .catch(e => toast('待排手術儲存失敗：' + e.message));
+}
+function cloudDeletePending(id){
+  if(mode !== 'cloud' || !cloud) return;
+  const {fsM, db, key} = cloud;
+  fsM.deleteDoc(fsM.doc(db, 'teams', key, 'pending', id))
+    .catch(e => toast('待排手術刪除失敗：' + e.message));
+}
+
+/* 我的刀：醫師欄位＝我的姓名（沒設定姓名時以員工編號比對） */
+function isMine(c){
+  const me = (currentName || currentUser || '').trim();
+  if(!me) return false;
+  return String(c.physician || '').trim() === me;
+}
+function myCasesOn(dateStr){
+  return state.cases.filter(c => !c.cancelledAt && c.date === dateStr && isMine(c));
+}
+function myPending(){
+  const me = (currentName || currentUser || '').trim();
+  return pending.filter(p => !me || !String(p.physician || '').trim() || String(p.physician).trim() === me);
+}
+
+/* 找出該天該院區第一個空的時段（先正規時段，再加台） */
+function findFreeSlot(dateStr, siteKey){
+  const rooms = siteKey === 'bm' ? 1 : 2;
+  const taken = Array.from({length: rooms}, () => new Set());
+  state.cases.forEach(c => {
+    if(c.cancelledAt || c.date !== dateStr || (c.site || 'hc') !== siteKey) return;
+    if(c.room >= rooms) return;
+    const i = DAY_SLOTS.indexOf(c.slot);
+    if(i < 0) return;
+    for(let k = 0; k < (c.span || 1); k++) taken[c.room].add(i + k);
+  });
+  const normal = DAY_SLOTS.filter(s => s[0] !== 'X');
+  const extra = DAY_SLOTS.filter(s => s[0] === 'X');
+  for(const group of [normal, extra]){
+    for(const s of group){
+      const i = DAY_SLOTS.indexOf(s);
+      for(let r = 0; r < rooms; r++) if(!taken[r].has(i)) return {room: r, slot: s};
+    }
+  }
+  return null;
+}
+
+/* 把待排手術排入某一天：找空位 → 建立排程 → 從待排清單移除 */
+function placeOnDay(p, dateStr){
+  const siteKey = p.site === 'bm' ? 'bm' : 'hc';
+  const spot = findFreeSlot(dateStr, siteKey);
+  if(!spot){
+    toast(md(new Date(dateStr + 'T00:00:00')) + ' ' + SITES[siteKey].label + ' 當天已排滿，請先挪出空位');
+    return;
+  }
+  const wd = new Date(dateStr + 'T00:00:00').getDay();
+  const nowIso = new Date().toISOString();
+  const c = {
+    id: uid(), date: dateStr, site: siteKey, room: spot.room, slot: spot.slot, span: 1,
+    name: p.name, chartNo: p.chartNo, birthday: p.birthday, sex: p.sex,
+    procedure: p.procedure, physician: p.physician, bed: p.bed, detail: p.detail, note: p.note,
+    startedAt: '', endedAt: '', cancelledAt: '', cancelledBy: '', cancelledByName: '',
+    createdBy: currentUser || '', createdByName: whoLabel() || '', createdAt: nowIso,
+    updatedBy: currentUser || '', updatedByName: whoLabel() || '', updatedAt: nowIso,
+  };
+  state.cases.push(c);
+  pending = pending.filter(x => x.id !== p.id);
+  if(mode === 'cloud'){ cloudWriteCase(c); cloudDeletePending(p.id); cloudLog('排入', c); }
+  else persist();
+  renderMe();
+  render();
+  pushUndo('排入「' + c.name + '」', () => {
+    removeCaseById(c.id);
+    pending.push(p); cloudWritePending(p);
+    renderMe();
+  });
+  const hidden = (wd === 6 && !state.showSat) || (wd === 0 && !state.showSun);
+  toast('已排入 ' + md(new Date(dateStr + 'T00:00:00')) + ' ' + slotLabel(spot.slot) + '（' +
+    (siteKey === 'bm' ? (state.bmRoomName || 'SIEMENS') : (state.roomNames[spot.room] || '')) + '）' +
+    (hidden ? '；該日目前未顯示，可至設定開啟' : '，可再拖曳調整時段'));
+}
+
+/* --- 月曆與待排清單的畫面 --- */
+function renderMe(){
+  if($('#meModal').classList.contains('hidden')) return;
+  renderMeCal();
+  renderPendList();
+}
+function renderMeCal(){
+  const first = meMonth || (meMonth = new Date(new Date().getFullYear(), new Date().getMonth(), 1));
+  $('#me-month').textContent = first.getFullYear() + ' 年 ' + (first.getMonth() + 1) + ' 月';
+  const y = first.getFullYear(), mo = first.getMonth();
+  const lead = (first.getDay() + 6) % 7;                 /* 週一為每週第一天 */
+  const days = new Date(y, mo + 1, 0).getDate();
+  const todayKey = ymd(new Date());
+  let h = ['一','二','三','四','五','六','日'].map(d => `<div class="me-dow">${d}</div>`).join('');
+  for(let i = 0; i < lead; i++) h += '<div class="me-day pad"></div>';
+  let monthTotal = 0;
+  for(let d = 1; d <= days; d++){
+    const key = ymd(new Date(y, mo, d));
+    const mine = myCasesOn(key);
+    monthTotal += mine.length;
+    const names = mine.slice(0, 2).map(c => esc(c.name)).join('<br>') + (mine.length > 2 ? '<br>…' : '');
+    h += `<div class="me-day${key === todayKey ? ' today' : ''}" data-date="${key}"
+      title="${mine.length ? esc(mine.map(c => slotLabel(c.slot) + ' ' + c.name).join('\n')) : '沒有你的刀'}">
+      <span class="me-dnum">${d}</span>
+      ${mine.length ? `<span class="me-cnt">${mine.length} 台</span><div class="me-names">${names}</div>` : ''}
+    </div>`;
+  }
+  $('#me-cal').innerHTML = h;
+  $('#me-count').textContent = '本月共 ' + monthTotal + ' 台';
+}
+function renderPendList(){
+  const list = myPending();
+  $('#me-pend-count').textContent = list.length ? '（' + list.length + '）' : '';
+  $('#me-pend').innerHTML = list.length ? list.map(p => `<div class="me-item" data-id="${esc(p.id)}">
+      <b>${esc(p.name || '(未填姓名)')}</b> <span class="mi-sub">${esc(p.chartNo || '')}</span>
+      <div class="mi-sub">${esc(p.procedure || '')} ${esc(p.detail || '')} ${p.site === 'bm' ? '｜生醫' : '｜新竹'}</div>
+      ${p.note ? `<div class="mi-sub">${esc(p.note)}</div>` : ''}
+    </div>`).join('')
+    : '<div class="me-empty">尚無待排手術<br>按下方「＋ 新增待排手術」建立<br>之後可直接拖到左邊日曆排入</div>';
+}
+function openMeModal(){
+  if(mode === 'cloud' && !currentUser){ ensureLogin(); return; }
+  meMonth = new Date(new Date().getFullYear(), new Date().getMonth(), 1);
+  $('#me-title').textContent = (whoLabel() || '我') + ' 的手術排程';
+  $('#meModal').classList.remove('hidden');
+  renderMe();
+}
+
+/* --- 待排手術的新增／編輯 --- */
+function openPendModal(p){
+  pendEditing = p || null;
+  $('#pend-title').textContent = p ? '編輯待排手術' : '新增待排手術';
+  $('#pd-sex').innerHTML = '<option value=""></option>' + (state.options.sex || ['M','F']).map(v => `<option>${esc(v)}</option>`).join('');
+  refreshDatalists();
+  const v = p || {physician: whoLabel() || '', site: (site === 'bm' ? 'bm' : 'hc')};
+  ['name','chartNo','birthday','sex','procedure','physician','bed','detail','note'].forEach(k => $('#pd-' + k).value = v[k] || '');
+  $('#pd-site').value = v.site === 'bm' ? 'bm' : 'hc';
+  $('#pd-delete').classList.toggle('hidden', !p);
+  $('#pendModal').classList.remove('hidden');
+  setTimeout(() => $('#pd-name').focus(), 50);
+}
+function savePend(){
+  const name = $('#pd-name').value.trim();
+  if(!name){ alert('請輸入姓名'); return; }
+  const p = normPending({
+    id: pendEditing ? pendEditing.id : uid(),
+    site: $('#pd-site').value,
+    name,
+    chartNo: $('#pd-chartNo').value.trim(), birthday: $('#pd-birthday').value.trim(),
+    sex: $('#pd-sex').value, procedure: $('#pd-procedure').value.trim(),
+    physician: $('#pd-physician').value.trim(), bed: $('#pd-bed').value.trim(),
+    detail: $('#pd-detail').value.trim(), note: $('#pd-note').value.trim(),
+    createdBy: pendEditing ? pendEditing.createdBy : (currentUser || ''),
+    createdByName: pendEditing ? pendEditing.createdByName : (whoLabel() || ''),
+    createdAt: pendEditing ? pendEditing.createdAt : new Date().toISOString(),
+  });
+  const i = pending.findIndex(x => x.id === p.id);
+  if(i >= 0) pending[i] = p; else pending.push(p);
+  const added = {};
+  [['procedures', p.procedure], ['physicians', p.physician], ['beds', p.bed], ['details', p.detail]]
+    .forEach(([k, v]) => { if(learnOption(k, v)) (added[k] = added[k] || []).push(v); });
+  cloudWritePending(p);
+  cloudLearnOptions(added);
+  $('#pendModal').classList.add('hidden');
+  pendEditing = null;
+  renderMe();
+}
+function deletePend(){
+  if(!pendEditing) return;
+  if(!confirm('刪除待排手術「' + (pendEditing.name || '') + '」？')) return;
+  const id = pendEditing.id;
+  pending = pending.filter(x => x.id !== id);
+  cloudDeletePending(id);
+  $('#pendModal').classList.add('hidden');
+  pendEditing = null;
+  renderMe();
+}
+
+/* --- 從待排清單拖到日曆 --- */
+let pdrag = null;
+function pdragCleanup(){
+  if(!pdrag) return;
+  if(pdrag.ghost) pdrag.ghost.remove();
+  document.querySelectorAll('.me-item.dragging').forEach(el => el.classList.remove('dragging'));
+  document.querySelectorAll('.me-day.drop-ok').forEach(el => el.classList.remove('drop-ok'));
+  document.body.classList.remove('dragging-mode');
+  pdrag = null;
+}
+$('#me-pend').addEventListener('pointerdown', e => {
+  const it = e.target.closest('.me-item');
+  if(!it || e.button > 0) return;
+  const p = pending.find(x => x.id === it.dataset.id);
+  if(!p) return;
+  pdrag = {p, el: it, startX: e.clientX, startY: e.clientY, active: false, moved: false};
+});
+document.addEventListener('pointermove', e => {
+  if(!pdrag) return;
+  if(!pdrag.active){
+    if(Math.abs(e.clientX - pdrag.startX) < 6 && Math.abs(e.clientY - pdrag.startY) < 6) return;
+    pdrag.active = true; pdrag.moved = true;
+    pdrag.el.classList.add('dragging');
+    document.body.classList.add('dragging-mode');
+    const g = document.createElement('div');
+    g.id = 'dragGhost';
+    g.textContent = pdrag.p.name + (pdrag.p.procedure ? '・' + pdrag.p.procedure : '');
+    document.body.appendChild(g);
+    pdrag.ghost = g;
+  }
+  pdrag.ghost.style.left = e.clientX + 'px';
+  pdrag.ghost.style.top = e.clientY + 'px';
+  document.querySelectorAll('.me-day.drop-ok').forEach(el => el.classList.remove('drop-ok'));
+  const el = document.elementFromPoint(e.clientX, e.clientY);
+  const day = el && el.closest('.me-day:not(.pad)');
+  if(day) day.classList.add('drop-ok');
+  pdrag.target = day ? day.dataset.date : null;
+});
+document.addEventListener('pointerup', () => {
+  if(!pdrag) return;
+  const {p, target, moved} = pdrag;
+  pdragCleanup();
+  if(moved && target) placeOnDay(p, target);
+});
+
+$('#userBadge').onclick = () => { if(currentUser) openMeModal(); };
+$('#me-close').onclick = () => $('#meModal').classList.add('hidden');
+$('#me-prev').onclick = () => { meMonth = new Date(meMonth.getFullYear(), meMonth.getMonth() - 1, 1); renderMeCal(); };
+$('#me-next').onclick = () => { meMonth = new Date(meMonth.getFullYear(), meMonth.getMonth() + 1, 1); renderMeCal(); };
+$('#me-add').onclick = () => openPendModal(null);
+$('#me-pend').addEventListener('click', e => {
+  const it = e.target.closest('.me-item');
+  if(!it || (pdrag && pdrag.moved)) return;
+  const p = pending.find(x => x.id === it.dataset.id);
+  if(p) openPendModal(p);
+});
+$('#me-cal').addEventListener('click', e => {   /* 點日期 → 跳到主排程該週 */
+  const d = e.target.closest('.me-day:not(.pad)');
+  if(!d) return;
+  weekStart = mondayOf(new Date(d.dataset.date + 'T00:00:00'));
+  $('#jumpDate').value = d.dataset.date;
+  $('#meModal').classList.add('hidden');
+  render();
+});
+$('#pd-save').onclick = savePend;
+$('#pd-cancel').onclick = () => { $('#pendModal').classList.add('hidden'); pendEditing = null; };
+$('#pd-delete').onclick = deletePend;
+$('#pendModal').addEventListener('keydown', e => {
+  if(e.key === 'Enter' && !e.isComposing && e.target.tagName === 'INPUT' && !e.target.hasAttribute('list')){ e.preventDefault(); savePend(); }
+});
 
 /* ================= 帳號（員工編號登入）與異動紀錄 ================= */
 let currentUser = null;   /* 已登入的員工編號 */
@@ -2470,6 +2852,8 @@ document.addEventListener('keydown', e => {
     if(!$('#caseModal').classList.contains('hidden')) closeCaseModal();
     else if(!$('#settingsModal').classList.contains('hidden')){ $('#settingsModal').classList.add('hidden'); render(); }
     else if(!$('#importModal').classList.contains('hidden')) $('#importModal').classList.add('hidden');
+    else if(!$('#pendModal').classList.contains('hidden')){ $('#pendModal').classList.add('hidden'); pendEditing = null; }
+    else if(!$('#meModal').classList.contains('hidden')) $('#meModal').classList.add('hidden');
     else if(!$('#pwModal').classList.contains('hidden')) $('#pwModal').classList.add('hidden');
     else if(!$('#logModal').classList.contains('hidden')) $('#logModal').classList.add('hidden');
     /* loginOverlay 不能用 Esc 關閉：雲端模式編輯前必須登入 */
