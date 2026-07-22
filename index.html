@@ -2801,12 +2801,18 @@ function rdragUpdate(x, y){
   if(!rdrag || !rdrag.active) return;
   rdrag.ghost.style.left = x + 'px';
   rdrag.ghost.style.top = y + 'px';
-  const el = document.elementFromPoint(rdrag.colX, y);
-  const tr = el && el.closest('tr[data-slot]');
-  const tb = el && el.closest('tbody[data-date]');
-  if(tr && tb && tb.dataset.date === rdrag.c.date){
-    const j = DAY_SLOTS.indexOf(tr.dataset.slot), i = DAY_SLOTS.indexOf(rdrag.c.slot);
-    if(j >= i) rdrag.span = Math.max(1, Math.min(j - i + 1, rdrag.max));
+  /* 直接用 Y 座標比對每一列的位置：跨列合併的儲存格會蓋住下方列，
+     用 elementFromPoint 只會抓到起始列，往回縮就會一次跳到 1 小時 */
+  const c = rdrag.c;
+  const tb = [...document.querySelectorAll('tbody[data-date]')].find(t => t.dataset.date === c.date);
+  if(tb){
+    const rows = tb.querySelectorAll('tr');
+    const i = DAY_SLOTS.indexOf(c.slot);
+    let j = i;
+    for(let k = i; k < rows.length; k++){
+      if(y >= rows[k].getBoundingClientRect().top) j = k; else break;
+    }
+    rdrag.span = Math.max(1, Math.min(j - i + 1, rdrag.max));
   }
   rdragDraw();
 }
