@@ -151,6 +151,26 @@ td.filled.done{background:#d9efdb; color:#1b5e20}
 #audit-info{margin-top:10px; color:#777; font-size:12px}
 #userBadge{color:#1a56a8; font-weight:bold; font-size:12.5px}
 
+/* 登入／個人設定／異動紀錄 */
+.lg-dialog{max-width:430px}
+.lg-hint{color:#777; font-size:12.5px; line-height:1.6; margin:0 0 12px}
+.lg-form{display:flex; flex-direction:column; gap:10px}
+.lg-form label{display:flex; flex-direction:column; gap:4px; font-size:12.5px; color:#555}
+.lg-form input{padding:8px 10px; border:1px solid #bbb; border-radius:8px; font-size:14px; font-family:inherit}
+.lg-form .lg-hint{margin:0}
+.lg-sep{border:none; border-top:1px solid #eee; margin:4px 0 0; width:100%}
+.log-dialog{max-width:820px}
+#log-list{max-height:60vh; overflow:auto; border:1px solid #ddd; border-radius:6px}
+.log-table{border-collapse:collapse; width:100%; font-size:12.5px}
+.log-table th, .log-table td{border-bottom:1px solid #eee; padding:5px 8px; text-align:left; white-space:nowrap}
+.log-table th{position:sticky; top:0; background:#f5f5f5; z-index:1}
+.log-act.新增{color:#17623b; font-weight:bold}
+.log-act.刪除{color:#b3261e; font-weight:bold}
+.log-act.取消{color:#b26a00; font-weight:bold}
+.log-act.修改, .log-act.復原, .log-act.移動, .log-act.匯入, .log-act.設定, .log-act.還原, .log-act.建立帳號{color:#1a56a8; font-weight:bold}
+#audit-info{margin-top:10px; color:#777; font-size:12px}
+#userBadge{color:#1a56a8; font-weight:bold; font-size:12.5px; white-space:nowrap}
+
 /* 時段重疊警示（多台電腦同時排入） */
 .dup{display:block; color:#b3261e; font-size:11.5px; font-weight:bold; cursor:pointer; white-space:nowrap; overflow:hidden; text-overflow:ellipsis}
 .dup:hover{text-decoration:underline}
@@ -295,6 +315,7 @@ td.filled.clash{box-shadow:inset 0 0 0 2px #e53935}
   <span id="weekLabel"></span>
   <span class="spacer"></span>
   <span id="saveStatus"></span>
+  <span id="userBadge"></span>
   <button id="btnSettings">⚙ 設定</button>
 </header>
 
@@ -329,6 +350,7 @@ td.filled.clash{box-shadow:inset 0 0 0 2px #e53935}
       <button id="f-end" class="end" type="button">■ 現在結束</button>
       <button id="f-end-clear" class="op-clear hidden" type="button" title="清除結束時間">✕</button>
     </div>
+    <div id="audit-info" class="hidden"></div>
     <div id="cxl-info" class="hidden"></div>
     <div class="dialog-actions">
       <button id="f-cancelCase" class="warn hidden">✂ 取消排程（劃線保留）</button>
@@ -361,6 +383,9 @@ td.filled.clash{box-shadow:inset 0 0 0 2px #e53935}
       <button id="cloud-join" class="hidden">連線既有雲端排程…</button>
       <button id="cloud-copykey" class="hidden">複製團隊金鑰</button>
       <button id="cloud-backupdir" class="hidden">設定每日備份資料夾…</button>
+      <button id="cloud-log" class="hidden">📋 異動紀錄</button>
+      <button id="cloud-pw" class="hidden">個人設定（姓名／密碼）</button>
+      <button id="cloud-logout" class="hidden">登出帳號</button>
       <button id="cloud-leave" class="hidden">清除此裝置的金鑰</button>
       <span id="cloud-backup-info"></span>
     </div>
@@ -416,6 +441,49 @@ td.filled.clash{box-shadow:inset 0 0 0 2px #e53935}
       <p class="hint">金鑰請向排程負責人索取（存放於 Dropbox「心導管排程」資料夾的「團隊金鑰.txt」）<br>只需輸入一次，此裝置之後會自動連線。</p>
     </div>
     <p id="st-hint"></p>
+  </div>
+</div>
+
+<!-- 登入 -->
+<div class="overlay hidden" id="loginOverlay">
+  <div class="dialog lg-dialog">
+    <h2>登入</h2>
+    <p class="lg-hint">請以「員工編號」登入。<br>第一次登入：帳號與密碼都是你的員工編號（例如 G00212 / G00212），登入後可設定姓名與新密碼。</p>
+    <div class="lg-form">
+      <label>帳號（員工編號）<input id="lg-id" autocomplete="username" spellcheck="false" placeholder="G00212"></label>
+      <label>密碼<input id="lg-pw" type="password" autocomplete="current-password"></label>
+    </div>
+    <div class="dialog-actions"><span class="spacer"></span><button id="lg-submit" class="primary">登入</button></div>
+  </div>
+</div>
+
+<!-- 個人設定（姓名／密碼） -->
+<div class="overlay hidden" id="pwModal">
+  <div class="dialog lg-dialog">
+    <h2 id="pw-title">個人設定</h2>
+    <p class="lg-hint" id="pw-hint">設定你的姓名（會顯示在異動紀錄中），並可修改密碼。</p>
+    <div class="lg-form">
+      <label>姓名<input id="pw-name" autocomplete="name" placeholder="例：王小明"></label>
+      <hr class="lg-sep">
+      <label>目前密碼<input id="pw-old" type="password" autocomplete="current-password"></label>
+      <label>新密碼（至少 4 碼；不改密碼請留空）<input id="pw-new" type="password" autocomplete="new-password"></label>
+      <label>再輸入一次新密碼<input id="pw-new2" type="password" autocomplete="new-password"></label>
+      <p class="lg-hint">請勿使用與院內其他系統（HIS、Email）相同的密碼。</p>
+    </div>
+    <div class="dialog-actions">
+      <span class="spacer"></span>
+      <button id="pw-cancel">取消</button>
+      <button id="pw-save" class="primary">儲存</button>
+    </div>
+  </div>
+</div>
+
+<!-- 異動紀錄 -->
+<div class="overlay hidden" id="logModal">
+  <div class="dialog log-dialog">
+    <h2>異動紀錄（最近 300 筆）</h2>
+    <div id="log-list"></div>
+    <div class="dialog-actions"><span class="spacer"></span><button id="log-close">關閉</button></div>
   </div>
 </div>
 
@@ -530,7 +598,8 @@ function fmtDT(iso){
 function cxlSpan(c, k){
   const v = c[k] || '';
   if(!v && k !== 'name') return '';
-  return `<span class="cxl" data-cxl-id="${esc(c.id)}" title="已取消 ${fmtDT(c.cancelledAt)}${c.cancelledBy ? '（' + esc(c.cancelledBy) + '）' : ''}（原佔 ${spanLabel(c.span||1)}）｜點擊可檢視或復原">${esc(v || '(未填)')}</span>`;
+  const by = c.cancelledByName || c.cancelledBy || '';
+  return `<span class="cxl" data-cxl-id="${esc(c.id)}" title="已取消 ${fmtDT(c.cancelledAt)}${by ? '（' + esc(by) + '）' : ''}（原佔 ${spanLabel(c.span||1)}）｜點擊可檢視或復原">${esc(v || '(未填)')}</span>`;
 }
 
 function opText(c){
@@ -608,6 +677,8 @@ function migrate(p){
     if(typeof c.startedAt !== 'string') c.startedAt = '';
     if(typeof c.endedAt !== 'string') c.endedAt = '';
     if(typeof c.cancelledAt !== 'string') c.cancelledAt = '';
+    ['createdBy','createdByName','createdAt','updatedBy','updatedByName','updatedAt','cancelledBy','cancelledByName']
+      .forEach(k => { if(typeof c[k] !== 'string') c[k] = ''; });
   });
   return s;
 }
@@ -884,6 +955,13 @@ function openCaseModal(caseObj, preset){
   renderOpUI();
   cxlDraft = c.cancelledAt || '';
   updateCxlUI();
+  /* 稽核資訊：誰建立、誰最後修改 */
+  const who = x => (c[x + 'ByName'] || c[x + 'By'] || '');
+  const ai = [];
+  if(who('created')) ai.push('建立：' + who('created') + (c.createdAt ? '（' + fmtDT(c.createdAt) + '）' : ''));
+  if(who('updated') && (c.updatedAt !== c.createdAt)) ai.push('最後修改：' + who('updated') + '（' + fmtDT(c.updatedAt) + '）');
+  $('#audit-info').textContent = ai.join('　｜　');
+  $('#audit-info').classList.toggle('hidden', !ai.length);
   $('#f-delete').classList.toggle('hidden', !caseObj);
   $('#caseModal').classList.remove('hidden');
   $('#f-name').focus();
@@ -898,6 +976,7 @@ function learnOption(list, val){
 }
 
 function saveCase(){
+  if(mode === 'cloud' && !currentUser){ closeCaseModal(); ensureLogin(); return false; }
   const slot = $('#f-slot').value;
   const c = {
     id: editing ? editing.id : uid(),
@@ -930,6 +1009,24 @@ function saveCase(){
     });
     if(clash){ alert('時段衝突：該時段已排「' + clash.name + '」（' + slotLabel(clash.slot) + '）'); return false; }
   }
+  /* 稽核欄位：誰建立、誰最後修改、誰取消 */
+  const nowIso = new Date().toISOString();
+  const who = currentUser || '', whoName = whoLabel() || '';
+  if(editing){
+    c.createdBy = editing.createdBy || ''; c.createdByName = editing.createdByName || '';
+    c.createdAt = editing.createdAt || '';
+    if(c.cancelledAt){
+      c.cancelledBy = editing.cancelledAt ? (editing.cancelledBy || '') : who;
+      c.cancelledByName = editing.cancelledAt ? (editing.cancelledByName || '') : whoName;
+    }else{ c.cancelledBy = ''; c.cancelledByName = ''; }
+  }else{
+    c.createdBy = who; c.createdByName = whoName; c.createdAt = nowIso;
+    c.cancelledBy = c.cancelledAt ? who : ''; c.cancelledByName = c.cancelledAt ? whoName : '';
+  }
+  c.updatedBy = who; c.updatedByName = whoName; c.updatedAt = nowIso;
+  let logAct = editing ? '修改' : '新增';
+  if(editing && !editing.cancelledAt && c.cancelledAt) logAct = '取消';
+  else if(editing && editing.cancelledAt && !c.cancelledAt) logAct = '復原';
   const added = {};
   [['procedures', c.procedure], ['physicians', c.physician], ['beds', c.bed], ['details', c.detail]]
     .forEach(([k, v]) => { if(learnOption(k, v)) (added[k] = added[k] || []).push(v); });
@@ -948,7 +1045,7 @@ function saveCase(){
     pushUndo('新增「' + c.name + '」', () => removeCaseById(nid));
   }
   closeCaseModal();
-  if(mode === 'cloud'){ cloudWriteCase(c); cloudLearnOptions(added); }
+  if(mode === 'cloud'){ cloudWriteCase(c); cloudLearnOptions(added); cloudLog(logAct, c); }
   else persist();
   render();
   const wd = new Date(c.date + 'T00:00:00').getDay();
@@ -960,12 +1057,13 @@ function saveCase(){
 
 function deleteCase(){
   if(!editing) return;
+  if(mode === 'cloud' && !currentUser){ closeCaseModal(); ensureLogin(); return; }
   const hint = editing.cancelledAt ? '' : '\n（若想保留劃線紀錄讓大家知道原本有排，請改用「✂ 取消排程」）';
-  if(!confirm('確定「永久」刪除「' + (editing.name||'') + '」這筆排程？將不留任何紀錄。' + hint)) return;
+  if(!confirm('確定「永久」刪除「' + (editing.name||'') + '」這筆排程？' + (mode === 'cloud' ? '\n（異動紀錄會留下刪除者帳號）' : '將不留任何紀錄。') + hint)) return;
   const delId = editing.id, delSnap = snapOf(state.cases.find(c => c.id === delId) || editing);
   state.cases = state.cases.filter(c => c.id !== delId);
   closeCaseModal();
-  if(mode === 'cloud') cloudDeleteCase(delId);
+  if(mode === 'cloud'){ cloudDeleteCase(delId); cloudLog('刪除', delSnap); }
   else persist();
   render();
   pushUndo('刪除「' + delSnap.name + '」', () => upsertCase(delSnap));
@@ -996,6 +1094,9 @@ function openSettings(){
     $('#cloud-join').classList.toggle('hidden', !!isCloud);
     $('#cloud-copykey').classList.toggle('hidden', !isCloud);
     $('#cloud-backupdir').classList.toggle('hidden', !isCloud);
+    $('#cloud-log').classList.toggle('hidden', !isCloud);
+    $('#cloud-pw').classList.toggle('hidden', !(isCloud && currentUser));
+    $('#cloud-logout').classList.toggle('hidden', !(isCloud && currentUser));
     $('#cloud-leave').classList.toggle('hidden', !isCloud);
     $('#cloud-backup-info').textContent = '';
     if(isCloud){
@@ -1028,7 +1129,7 @@ function saveSettings(){
   state.options.beds = lines($('#s-beds').value);
   state.options.details = lines($('#s-details').value);
   $('#settingsModal').classList.add('hidden');
-  if(mode === 'cloud') cloudWriteMeta();
+  if(mode === 'cloud'){ cloudWriteMeta(); cloudLog('設定', {name: '修改設定/選單'}); }
   else persist();
   render();
   pushUndo('修改設定', () => {
@@ -1412,6 +1513,7 @@ $('#imp-year').onchange = impReparse;
 $('#imp-cancel').onclick = () => $('#importModal').classList.add('hidden');
 $('#imp-confirm').onclick = async () => {
   if(!impParsed || !impParsed.cases.length) return;
+  if(mode === 'cloud' && !currentUser){ $('#importModal').classList.add('hidden'); ensureLogin(); return; }
   const ev = impEvaluate(impParsed.cases);   /* 以當下最新的排程重新比對 */
   const adds = ev.filter(e => e.status === 'add').map(e => e.c);
   const dup = ev.filter(e => e.status === 'dup').length;
@@ -1419,7 +1521,10 @@ $('#imp-confirm').onclick = async () => {
   if(!adds.length){ toast('沒有可匯入的新排程' + (dup || conflict ? '（重複 ' + dup + '、衝突 ' + conflict + '）' : '')); return; }
   let firstDate = null, hiddenDay = 0;
   const addedOpts = {};
+  const impNow = new Date().toISOString();
   for(const pc of adds){
+    pc.createdBy = currentUser || ''; pc.createdByName = whoLabel() || ''; pc.createdAt = impNow;
+    pc.updatedBy = currentUser || ''; pc.updatedByName = whoLabel() || ''; pc.updatedAt = impNow;
     state.cases.push(pc);
     [['procedures', pc.procedure], ['physicians', pc.physician], ['beds', pc.bed], ['details', pc.detail]]
       .forEach(([k, v]) => { if(learnOption(k, v)) (addedOpts[k] = addedOpts[k] || []).push(v); });
@@ -1431,7 +1536,7 @@ $('#imp-confirm').onclick = async () => {
   if(firstDate){ weekStart = mondayOf(new Date(firstDate + 'T00:00:00')); $('#jumpDate').value = firstDate; }
   let ok;
   if(mode === 'cloud'){
-    try{ await cloudImportCases(adds); cloudLearnOptions(addedOpts); ok = true; }
+    try{ await cloudImportCases(adds); cloudLearnOptions(addedOpts); adds.forEach(pc => cloudLog('匯入', pc)); ok = true; }
     catch(e){ ok = false; toast('雲端寫入失敗：' + e.message); }
   }else{
     ok = await persist();
@@ -1574,6 +1679,7 @@ async function connectCloud(key, opts){
   $('#banner').classList.add('hidden');
   render();
   setStatus('☁ 已連線雲端資料庫');
+  ensureLogin();
 }
 
 function cloudWriteCase(c){
@@ -1656,6 +1762,173 @@ async function attemptDailyBackup(force){
     localStorage.setItem('cathlab-lastbackup', today);
     if(force) toast('已備份到指定資料夾');
   }catch(e){ if(force) toast('備份失敗：' + e.message); }
+}
+
+/* ================= 帳號（員工編號登入）與異動紀錄 ================= */
+let currentUser = null;   /* 已登入的員工編號 */
+let currentName = '';     /* 顯示姓名（沒設定時以員工編號代替） */
+
+const PW_ITER = 100000;
+async function sha256Hex(str){
+  const b = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(str));
+  return [...new Uint8Array(b)].map(x => x.toString(16).padStart(2, '0')).join('');
+}
+/* 密碼雜湊：PBKDF2-SHA256 十萬次迭代（避免拿到資料的人暴力破解同事密碼） */
+async function pbkdf2Hex(password, saltHex, iterations){
+  const km = await crypto.subtle.importKey('raw', new TextEncoder().encode(password), 'PBKDF2', false, ['deriveBits']);
+  const bits = await crypto.subtle.deriveBits(
+    {name: 'PBKDF2', hash: 'SHA-256', salt: new TextEncoder().encode(saltHex), iterations}, km, 256);
+  return [...new Uint8Array(bits)].map(x => x.toString(16).padStart(2, '0')).join('');
+}
+async function makePassRecord(password){
+  const salt = newTeamKey(16);
+  return {algo: 'pbkdf2', iter: PW_ITER, salt, passHash: await pbkdf2Hex(password, salt, PW_ITER)};
+}
+async function verifyPassword(u, pw){
+  if(u.algo === 'pbkdf2') return (await pbkdf2Hex(pw, u.salt || '', u.iter || PW_ITER)) === u.passHash;
+  return (await sha256Hex((u.salt || '') + pw)) === u.passHash;   /* 舊格式，登入後自動升級 */
+}
+function whoLabel(){ return currentName || currentUser || ''; }
+function updateUserBadge(){ $('#userBadge').textContent = currentUser ? '👤 ' + whoLabel() : ''; }
+
+function ensureLogin(){
+  if(mode !== 'cloud'){ currentUser = null; currentName = ''; updateUserBadge(); return; }
+  let saved = null;
+  try{ saved = JSON.parse(localStorage.getItem('cathlab-user') || 'null'); }catch(e){}
+  if(saved && saved.team === cloud.key && saved.empId){
+    currentUser = saved.empId; currentName = saved.name || '';
+    updateUserBadge();
+    return;
+  }
+  currentUser = null; currentName = ''; updateUserBadge();
+  $('#loginOverlay').classList.remove('hidden');
+  setTimeout(() => $('#lg-id').focus(), 50);
+}
+function setUser(empId, name){
+  currentUser = empId; currentName = name || '';
+  try{ localStorage.setItem('cathlab-user', JSON.stringify({empId, name: currentName, team: cloud.key})); }catch(e){}
+  updateUserBadge();
+  $('#loginOverlay').classList.add('hidden');
+  $('#lg-pw').value = '';
+}
+async function loginSubmit(){
+  const id = $('#lg-id').value.trim().toUpperCase();
+  const pw = $('#lg-pw').value;
+  if(!id){ alert('請輸入員工編號'); return; }
+  if(!pw){ alert('請輸入密碼'); return; }
+  $('#lg-submit').disabled = true;
+  try{
+    const {fsM, db, key} = cloud;
+    const ref = fsM.doc(db, 'teams', key, 'users', id);
+    const snap = await fsM.getDoc(ref);
+    if(snap.exists()){
+      const u = snap.data();
+      let ok = await verifyPassword(u, pw);
+      if(!ok && u.mustChange && pw.trim().toUpperCase() === id) ok = true;   /* 預設密碼不分大小寫 */
+      if(!ok){ alert('密碼錯誤'); return; }
+      if(u.algo !== 'pbkdf2'){   /* 舊雜湊格式透明升級 */
+        try{ await fsM.setDoc(ref, Object.assign({}, u, await makePassRecord(u.mustChange ? id : pw))); }catch(e){}
+      }
+      setUser(id, u.name || '');
+      toast('👤 ' + whoLabel() + ' 已登入');
+      if(u.mustChange || !u.name) openPwModal(true);
+    }else{
+      /* 第一次登入：帳號密碼都是員工編號（不分大小寫）→ 自動建立帳號 */
+      if(pw.trim().toUpperCase() !== id){
+        alert('查無此帳號「' + id + '」。\n第一次登入請以員工編號作為帳號與密碼（例如 G00212 / G00212）。');
+        return;
+      }
+      await fsM.setDoc(ref, Object.assign({empId: id, name: '', mustChange: true, createdAt: new Date().toISOString()}, await makePassRecord(id)));
+      setUser(id, '');
+      cloudLog('建立帳號', {name: id});
+      toast('👤 已建立帳號 ' + id);
+      openPwModal(true);
+    }
+  }catch(e){ alert('登入失敗：' + e.message); }
+  finally{ $('#lg-submit').disabled = false; }
+}
+
+function openPwModal(firstTime){
+  $('#pw-title').textContent = firstTime ? '歡迎！請設定你的姓名與密碼' : '個人設定';
+  $('#pw-hint').textContent = firstTime
+    ? '請輸入你的姓名（會顯示在異動紀錄中，讓大家知道是誰排的），並建議修改預設密碼。'
+    : '可修改顯示姓名與密碼。姓名會顯示在異動紀錄中。';
+  $('#pw-name').value = currentName || '';
+  $('#pw-old').value = ''; $('#pw-new').value = ''; $('#pw-new2').value = '';
+  $('#pwModal').classList.remove('hidden');
+  setTimeout(() => $('#pw-name').focus(), 50);
+}
+async function savePersonal(){
+  const name = $('#pw-name').value.trim();
+  const oldPw = $('#pw-old').value, npw = $('#pw-new').value, npw2 = $('#pw-new2').value;
+  if(!name){ alert('請輸入姓名'); return; }
+  const changingPw = !!(npw || npw2);
+  if(changingPw){
+    if(npw.length < 4){ alert('新密碼至少 4 碼'); return; }
+    if(npw !== npw2){ alert('兩次輸入的新密碼不相同'); return; }
+    if(!oldPw){ alert('請輸入目前密碼'); return; }
+  }
+  $('#pw-save').disabled = true;
+  try{
+    const {fsM, db, key} = cloud;
+    const ref = fsM.doc(db, 'teams', key, 'users', currentUser);
+    const snap = await fsM.getDoc(ref);
+    if(!snap.exists()){ alert('帳號資料不存在，請重新登入'); return; }
+    const u = snap.data();
+    let patch = {name, updatedAt: new Date().toISOString()};
+    if(changingPw){
+      let okOld = await verifyPassword(u, oldPw);
+      if(!okOld && u.mustChange && oldPw.trim().toUpperCase() === (u.empId || currentUser)) okOld = true;
+      if(!okOld){ alert('目前密碼錯誤'); return; }
+      patch = Object.assign(patch, await makePassRecord(npw), {mustChange: false});
+    }
+    await fsM.setDoc(ref, Object.assign({}, u, patch));
+    setUser(currentUser, name);
+    $('#pwModal').classList.add('hidden');
+    toast(changingPw ? '姓名與密碼已更新' : '姓名已更新');
+  }catch(e){ alert('儲存失敗：' + e.message); }
+  finally{ $('#pw-save').disabled = false; }
+}
+
+/* 異動紀錄：每筆新增/修改/取消/復原/移動/刪除/匯入都留下誰、何時、動了哪筆 */
+function cloudLog(action, c){
+  if(mode !== 'cloud' || !cloud) return;
+  const {fsM, db, key} = cloud;
+  fsM.addDoc(fsM.collection(db, 'teams', key, 'log'), {
+    at: new Date().toISOString(),
+    by: currentUser || '?', byName: whoLabel() || '?',
+    action,
+    caseId: c.id || '', name: c.name || '', date: c.date || '',
+    site: c.site || '', room: (typeof c.room === 'number') ? c.room : -1, slot: c.slot || '',
+  }).catch(() => {});
+}
+async function openLogModal(){
+  if(mode !== 'cloud' || !cloud) return;
+  $('#log-list').innerHTML = '<div style="padding:12px;color:#888">載入中…</div>';
+  $('#logModal').classList.remove('hidden');
+  try{
+    const {fsM, db, key} = cloud;
+    const q = fsM.query(fsM.collection(db, 'teams', key, 'log'), fsM.orderBy('at', 'desc'), fsM.limit(300));
+    const snap = await fsM.getDocs(q);
+    const rows = [];
+    snap.forEach(d => {
+      const e = d.data();
+      const who = e.byName && e.byName !== '?' ? e.byName : (e.by || '');
+      const sameName = who === e.by;
+      const roomTxt = (e.room === 0 || e.room === 1)
+        ? '（' + esc(e.site === 'bm' ? (state.bmRoomName || 'SIEMENS') : (state.roomNames[e.room] || '')) + '）' : '';
+      rows.push(`<tr>
+        <td>${esc((e.at || '').slice(5, 10))} ${esc(fmtT(e.at))}</td>
+        <td>${esc(who)}${sameName ? '' : '<span style="color:#999"> (' + esc(e.by || '') + ')</span>'}</td>
+        <td class="log-act ${esc(e.action || '')}">${esc(e.action || '')}</td>
+        <td>${esc(e.name || '')}</td>
+        <td>${e.site ? '<span style="color:#888">' + (e.site === 'bm' ? '生醫' : '新竹') + '</span> ' : ''}${e.date ? esc(e.date) : ''}${e.slot ? ' ' + esc(slotLabel(e.slot)) : ''}${roomTxt}</td>
+      </tr>`);
+    });
+    $('#log-list').innerHTML = rows.length
+      ? `<table class="log-table"><thead><tr><th>時間</th><th>帳號</th><th>動作</th><th>病人</th><th>排程</th></tr></thead><tbody>${rows.join('')}</tbody></table>`
+      : '<div style="padding:12px;color:#888">尚無紀錄</div>';
+  }catch(e){ $('#log-list').innerHTML = `<div style="padding:12px;color:#b3261e">讀取失敗：${esc(e.message)}</div>`; }
 }
 
 /* ================= 資料檔（File System Access API） ================= */
@@ -1894,7 +2167,10 @@ function dragDrop(t){
   const id = c.id, from = {date: c.date, room: c.room, slot: c.slot};
   const label = p => md(new Date(p.date + 'T00:00:00')) + ' ' + slotLabel(p.slot) + '（' + siteRoomName(p.room) + '）';
   c.date = t.date; c.room = t.room; c.slot = t.slot;
-  if(mode === 'cloud') cloudWriteCase(c); else persist();
+  if(mode === 'cloud'){
+    c.updatedBy = currentUser || ''; c.updatedByName = whoLabel() || ''; c.updatedAt = new Date().toISOString();
+    cloudWriteCase(c); cloudLog('移動', c);
+  }else persist();
   render();
   pushUndo('移動「' + c.name + '」', () => {
     const cc = state.cases.find(x => x.id === id);
@@ -1913,6 +2189,7 @@ function dragDrop(t){
 
 $('#grid').addEventListener('pointerdown', e => {
   if(e.button > 0) return;
+  if(mode === 'cloud' && !currentUser) return;   /* 未登入不可拖曳移動 */
   if(e.target.closest('span.cxl, span.dup')) return;   /* 這些是點擊開啟，不拖曳 */
   const td = e.target.closest('td.filled');
   if(!td) return;
@@ -2043,8 +2320,12 @@ $('#s-importFile').onchange = async e => {
       refreshDatalists();
     });
     if(mode === 'cloud'){
+      if(!currentUser){ $('#settingsModal').classList.add('hidden'); ensureLogin(); e.target.value = ''; return; }
+      const rNow = new Date().toISOString();
+      incoming.cases.forEach(c => { c.updatedBy = currentUser; c.updatedByName = whoLabel(); c.updatedAt = rNow; });
       $('#settingsModal').classList.add('hidden');
       await cloudReplaceAll(incoming);
+      cloudLog('還原', {name: '整批還原備份（' + incoming.cases.length + ' 筆）'});
       undoRestore();
       render();
       toast('已匯入資料（雲端已更新）');
@@ -2107,6 +2388,7 @@ $('#cloud-leave').onclick = async () => {
     localStorage.removeItem('cathlab-teamkey');
     localStorage.removeItem('cathlab-data');
     localStorage.removeItem('cathlab-lastbackup');
+    localStorage.removeItem('cathlab-user');
   }catch(e){}
   try{
     if(cloud){
@@ -2118,6 +2400,26 @@ $('#cloud-leave').onclick = async () => {
   }catch(e){}
   location.reload();
 };
+/* --- 帳號相關事件 --- */
+$('#lg-submit').onclick = loginSubmit;
+$('#lg-id').addEventListener('keydown', e => { if(e.key === 'Enter' && !e.isComposing) $('#lg-pw').focus(); });
+$('#lg-pw').addEventListener('keydown', e => { if(e.key === 'Enter' && !e.isComposing && !$('#lg-submit').disabled) loginSubmit(); });
+$('#pw-save').onclick = savePersonal;
+$('#pw-cancel').onclick = () => $('#pwModal').classList.add('hidden');
+$('#pwModal').addEventListener('keydown', e => {
+  if(e.key === 'Enter' && !e.isComposing && e.target.tagName === 'INPUT' && !$('#pw-save').disabled){ e.preventDefault(); savePersonal(); }
+});
+$('#log-close').onclick = () => $('#logModal').classList.add('hidden');
+$('#cloud-log').onclick = () => { $('#settingsModal').classList.add('hidden'); openLogModal(); };
+$('#cloud-pw').onclick = () => { $('#settingsModal').classList.add('hidden'); openPwModal(false); };
+$('#cloud-logout').onclick = () => {
+  if(!confirm('登出帳號？下次編輯排程前需重新登入。')) return;
+  try{ localStorage.removeItem('cathlab-user'); }catch(e){}
+  currentUser = null; currentName = ''; updateUserBadge();
+  $('#settingsModal').classList.add('hidden');
+  $('#loginOverlay').classList.remove('hidden');
+};
+
 $('#cloud-join').onclick = async () => {
   const raw = prompt('請輸入團隊金鑰（12 碼，可含連字號）：');
   if(!raw) return;
@@ -2134,6 +2436,9 @@ document.addEventListener('keydown', e => {
     if(!$('#caseModal').classList.contains('hidden')) closeCaseModal();
     else if(!$('#settingsModal').classList.contains('hidden')){ $('#settingsModal').classList.add('hidden'); render(); }
     else if(!$('#importModal').classList.contains('hidden')) $('#importModal').classList.add('hidden');
+    else if(!$('#pwModal').classList.contains('hidden')) $('#pwModal').classList.add('hidden');
+    else if(!$('#logModal').classList.contains('hidden')) $('#logModal').classList.add('hidden');
+    /* loginOverlay 不能用 Esc 關閉：雲端模式編輯前必須登入 */
   }
 });
 
