@@ -1041,7 +1041,8 @@ function tbodyHtml(date){
   let h = `<tbody class="day${key===ymd(new Date())?' today':''}" data-date="${key}">`;
   rowPlan.forEach((row, ri) => {
     if(row.lead){
-      h += `<tr class="lead">`;
+      /* 下午的分隔粗線畫在「下午負責醫師」列的上方 */
+      h += `<tr class="lead${row.lead === 'pm' ? ' pm-start' : ''}">`;
       if(ri === 0){
         h += `<td class="daycell" rowspan="${rowPlan.length}" title="${WEEKNAMES[date.getDay()]} ${md(date)}"><div>${WEEKNAMES[date.getDay()].slice(2)}</div><div class="d">${md(date)}</div></td>`;
       }
@@ -1055,7 +1056,8 @@ function tbodyHtml(date){
       return;
     }
     const s = row.slot;
-    const cls = (s[0]==='X' ? 'extra' : '') + (s==='1300' ? ' pm-start' : '');
+    /* 有負責醫師列時，粗線已畫在該列上方，13:00 這列就不再重複 */
+    const cls = (s[0]==='X' ? 'extra' : '') + (s==='1300' && !withLead ? ' pm-start' : '');
     h += `<tr class="${cls}" data-slot="${s}">`;
     if(ri === 0){
       h += `<td class="daycell" rowspan="${rowPlan.length}" title="${WEEKNAMES[date.getDay()]} ${md(date)}"><div>${WEEKNAMES[date.getDay()].slice(2)}</div><div class="d">${md(date)}</div></td>`;
