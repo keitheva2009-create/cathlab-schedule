@@ -81,13 +81,13 @@ td.timecell{
   position:sticky; left:32px; z-index:3; background:#fff;
   color:#444; font-size:11px; text-align:center; padding:2px 1px;
 }
-/* 時段負責醫師列 */
-tr.lead td{background:#fff8e1; border-bottom:1px solid #e8d48a}
-tr.lead td.timecell{background:#fbf1cd; font-weight:bold; color:#7a5c00}
-td.leadcell{cursor:pointer; color:#7a5c00; font-size:12px; white-space:nowrap}
-td.leadcell:hover{background:#fdf0c2}
-td.leadcell b{font-size:13px; color:#5c4500}
-td.leadcell .lead-empty{color:#bba;}
+/* 時段負責醫師列（白底；淡黃色保留給「今日」標示） */
+tr.lead td.leadcell, tr.lead td.timecell{background:#fff; border-bottom:1px solid #bdbdbd}
+tr.lead td.timecell{font-weight:bold; color:#555}
+td.leadcell{cursor:pointer; color:#555; font-size:12px; white-space:nowrap}
+td.leadcell:hover{background:#eef5ff}
+td.leadcell b{font-size:13px; color:#222}
+td.leadcell .lead-empty{color:#bbb}
 
 tr.extra td{background:#e9e9e9}
 tr.extra td.timecell{background:#e2e2e2; font-weight:bold}
@@ -1992,11 +1992,45 @@ async function attemptDailyBackup(force){
 }
 
 /* ================= 時段負責醫師（週一～週五，上午／下午各一位） ================= */
-let leads = Object.create(null);   /* id → 醫師姓名 */
+let leads = Object.create(null);   /* id → 醫師姓名（單日覆寫，優先於固定班表） */
 let leadEditing = null;
 
+/* 固定班表：院區_導管室 → 星期(1=一…5=五) → 上午/下午 */
+const DEFAULT_LEADS = {
+  hc_0: {   /* 新竹 PHILIPS */
+    1: {am: '張有慶 54315',        pm: '呂忠穎 54568'},
+    2: {am: '許如瑩 53884',        pm: '李志國 87665'},
+    3: {am: '葉洛嘉/蕭喻中 54184', pm: '楊欽文 54383'},
+    4: {am: '黃冠智 53541',        pm: '潘恆宇 54456'},
+    5: {am: '林彥良 54633',        pm: '張恕桓 54347'},
+  },
+  hc_1: {   /* 新竹 SIEMENS */
+    1: {am: '陳宗彥 54356', pm: '許如瑩 53884'},
+    2: {am: '林彥良 54633', pm: '謝慕揚 54046'},
+    3: {am: '陳宗彥 54356', pm: '劉聖甫 54237'},
+    4: {am: '楊欽文 54383', pm: '林彥良 54633'},
+    5: {am: '許如瑩 53884', pm: '林麟'},
+  },
+  bm_0: {   /* 生醫 SIEMENS */
+    1: {am: '余安立 54762', pm: '童宇鴻'},
+    2: {am: '劉聖甫 54237', pm: '曾新育 54628'},
+    3: {am: '劉聖甫 54237', pm: '趙振安 54636'},
+    4: {am: '趙振安 54636', pm: '張凱鈞 54635'},
+    5: {am: '曾新育 54628', pm: '張凱鈞 54635'},
+  },
+};
+
 function leadId(date, siteKey, room, sess){ return (siteKey || 'hc') + '_' + date + '_' + room + '_' + sess; }
-function leadName(date, siteKey, room, sess){ return leads[leadId(date, siteKey, room, sess)] || ''; }
+function leadDefault(date, siteKey, room, sess){
+  const dow = new Date(date + 'T00:00:00').getDay();
+  const tbl = DEFAULT_LEADS[(siteKey || 'hc') + '_' + room];
+  return (tbl && tbl[dow] && tbl[dow][sess]) || '';
+}
+/* 單日若有另外指定就用指定的，否則顯示固定班表 */
+function leadName(date, siteKey, room, sess){
+  const id = leadId(date, siteKey, room, sess);
+  return (id in leads) ? leads[id] : leadDefault(date, siteKey, room, sess);
+}
 function hasLeadRows(date){ const d = date.getDay(); return d >= 1 && d <= 5; }   /* 只有週一～週五 */
 
 function cloudWriteLead(id, rec){
@@ -2010,9 +2044,14 @@ function openLeadModal(date, siteKey, room, sess){
   if(mode === 'cloud' && !currentUser){ ensureLogin(); return; }
   leadEditing = {date, site: siteKey, room, sess};
   const d = new Date(date + 'T00:00:00');
+  const def = leadDefault(date, siteKey, room, sess);
+  const overridden = leadId(date, siteKey, room, sess) in leads;
   $('#lead-sub').textContent = md(d) + '（' + WEEKNAMES[d.getDay()].slice(2) + '）'
     + (sess === 'am' ? ' 上午' : ' 下午') + '　'
-    + (siteKey === 'bm' ? (state.bmRoomName || 'SIEMENS') : (state.roomNames[room] || ''));
+    + (siteKey === 'bm' ? (state.bmRoomName || 'SIEMENS') : (state.roomNames[room] || ''))
+    + (def ? '　｜　固定班表：' + def + (overridden ? '（本日已另行指定）' : '') : '');
+  $('#lead-clear').textContent = def ? '恢復固定班表' : '清除';
+  $('#lead-clear').classList.toggle('hidden', !overridden && !leadName(date, siteKey, room, sess));
   refreshDatalists();
   $('#lead-name').value = leadName(date, siteKey, room, sess);
   $('#leadModal').classList.remove('hidden');
@@ -2023,7 +2062,8 @@ function saveLead(clear){
   const {date, site: s, room, sess} = leadEditing;
   const id = leadId(date, s, room, sess);
   const name = clear ? '' : $('#lead-name').value.trim();
-  const before = leads[id] || '';
+  const had = id in leads, before = leads[id] || '';
+  /* 清除＝移除單日指定（回到固定班表）；輸入空白也視為清除 */
   if(name) leads[id] = name; else delete leads[id];
   const rec = name ? {id, date, site: s, room, sess, name,
     updatedBy: currentUser || '', updatedByName: whoLabel() || '', updatedAt: new Date().toISOString()} : null;
@@ -2035,11 +2075,10 @@ function saveLead(clear){
   leadEditing = null;
   render();
   pushUndo('時段負責醫師', () => {
-    if(before) leads[id] = before; else delete leads[id];
-    cloudWriteLead(id, before ? {id, date, site: s, room, sess, name: before} : null);
+    if(had) leads[id] = before; else delete leads[id];
+    cloudWriteLead(id, had ? {id, date, site: s, room, sess, name: before} : null);
     render();
   });
-  if(!clear) learnOption('physicians', name) && cloudLearnOptions({physicians: [name]});
 }
 $('#lead-save').onclick = () => saveLead(false);
 $('#lead-clear').onclick = () => saveLead(true);
