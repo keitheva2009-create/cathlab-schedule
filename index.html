@@ -203,6 +203,14 @@ td.filled.done{background:#d9efdb; color:#1b5e20}
   border-radius:9px; padding:0 6px; font-size:11px; font-weight:bold;
 }
 .me-names{color:#555; line-height:1.35; margin-top:2px; overflow:hidden}
+.me-case{
+  display:block; background:#eef2fa; border-radius:4px; padding:1px 4px; margin-top:2px;
+  cursor:grab; touch-action:none; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
+}
+.me-case:hover{background:#dbe6f8}
+.me-case.dragging{opacity:.35}
+.me-cnt{cursor:grab; touch-action:none}
+.me-pend.drop-ok{background:#e6f4ea; border-color:#2e7d32; border-width:2px}
 .me-pend-head{font-weight:bold; font-size:13px; margin-bottom:6px; display:flex; gap:8px; align-items:baseline}
 .me-pend{
   flex:1; min-height:120px; max-height:52vh; overflow:auto;
@@ -268,7 +276,10 @@ td.filled.clash{box-shadow:inset 0 0 0 2px #e53935}
 .dialog{
   background:#fff; border-radius:10px; box-shadow:0 8px 30px rgba(0,0,0,.25);
   padding:18px 20px; max-width:660px; width:100%; max-height:92vh; overflow:auto;
+  overscroll-behavior:contain;   /* 視窗捲到底時不要把捲動傳給後面的排程表 */
 }
+/* 有任何視窗開啟時，鎖住背後排程表的捲動 */
+body.modal-open #scroll{overflow:hidden}
 .dialog h2{margin:0 0 12px; font-size:16px}
 .form-grid{display:grid; grid-template-columns:repeat(4,1fr); gap:8px 10px}
 .form-grid label{display:flex; flex-direction:column; gap:3px; font-size:12px; color:#555}
@@ -361,6 +372,10 @@ td.filled.clash{box-shadow:inset 0 0 0 2px #e53935}
   .form-grid label{font-size:11.5px}
   /* 16px 可避免 iOS Safari 點欄位時整頁自動放大 */
   .form-grid input, .form-grid select, .form-grid textarea{font-size:16px; padding:6px 7px}
+  /* 日期欄在手機上原生樣式會比其他欄位高很多，統一高度 */
+  .form-grid input, .form-grid select{height:36px; line-height:1.2; box-sizing:border-box}
+  .form-grid input[type=date]{-webkit-appearance:none; appearance:none; min-height:0}
+  .form-grid textarea{height:auto}
   .lg-form input{font-size:16px}
   .op-row{margin-top:10px; padding:8px 9px; gap:6px; font-size:12px}
   .op-row .op-gap{margin-left:0}
@@ -2020,11 +2035,12 @@ function renderMeCal(){
     const key = ymd(new Date(y, mo, d));
     const mine = myCasesOn(key);
     monthTotal += mine.length;
-    const names = mine.slice(0, 2).map(c => esc(c.name)).join('<br>') + (mine.length > 2 ? '<br>…' : '');
+    const chips = mine.map(c => `<span class="me-case" data-id="${esc(c.id)}"
+      title="${esc(slotLabel(c.slot) + ' ' + c.name + '（' + (c.site === 'bm' ? '生醫' : '新竹') + '）｜長按可拖到別天或拖回待排')}">${esc(c.name)}</span>`).join('');
     h += `<div class="me-day${key === todayKey ? ' today' : ''}" data-date="${key}"
       title="${mine.length ? esc(mine.map(c => slotLabel(c.slot) + ' ' + c.name).join('\n')) : '沒有你的刀'}">
       <span class="me-dnum">${d}</span>
-      ${mine.length ? `<span class="me-cnt">${mine.length} 台</span><div class="me-names">${names}</div>` : ''}
+      ${mine.length ? `<span class="me-cnt" data-date="${key}">${mine.length} 台</span><div class="me-names">${chips}</div>` : ''}
     </div>`;
   }
   $('#me-cal').innerHTML = h;
@@ -2098,49 +2114,139 @@ function deletePend(){
   renderMe();
 }
 
-/* --- 從待排清單拖到日曆 --- */
+/* --- 把已排的刀換到別天 --- */
+function moveCaseToDay(c, dateStr){
+  if(c.date === dateStr){ toast('已經在這一天了'); return; }
+  const siteKey = c.site || 'hc';
+  const spot = findFreeSlot(dateStr, siteKey);
+  if(!spot){
+    toast(md(new Date(dateStr + 'T00:00:00')) + ' ' + SITES[siteKey].label + ' 當天已排滿，請先挪出空位');
+    return;
+  }
+  const from = {date: c.date, room: c.room, slot: c.slot};
+  const live = state.cases.find(x => x.id === c.id);
+  if(!live){ toast('這筆排程已不存在'); return; }
+  live.date = dateStr; live.room = spot.room; live.slot = spot.slot;
+  live.updatedBy = currentUser || ''; live.updatedByName = whoLabel() || ''; live.updatedAt = new Date().toISOString();
+  if(mode === 'cloud'){ cloudWriteCase(live); cloudLog('移動', live); } else persist();
+  renderMe(); render();
+  pushUndo('移動「' + live.name + '」', () => {
+    const cc = state.cases.find(x => x.id === c.id);
+    if(!cc) return '這筆排程已不存在';
+    const v = dragValidate(cc, from);
+    if(!v.ok && !v.same) return '原時段' + (v.msg ? '已被占用（' + v.msg + '）' : '不可用');
+    cc.date = from.date; cc.room = from.room; cc.slot = from.slot;
+    writeCase(cc); renderMe();
+  });
+  toast('已改到 ' + md(new Date(dateStr + 'T00:00:00')) + ' ' + slotLabel(spot.slot) + '，可再拖曳調整時段');
+}
+/* --- 把已排的刀收回待排清單 --- */
+function caseToPending(c){
+  const live = state.cases.find(x => x.id === c.id);
+  if(!live){ toast('這筆排程已不存在'); return; }
+  const snap = snapOf(live);
+  const p = normPending({
+    id: uid(), site: live.site || 'hc',
+    name: live.name, chartNo: live.chartNo, birthday: live.birthday, sex: live.sex,
+    procedure: live.procedure, physician: live.physician, bed: live.bed,
+    detail: live.detail, note: live.note,
+    createdBy: currentUser || '', createdByName: whoLabel() || '', createdAt: new Date().toISOString(),
+  });
+  pending.push(p);
+  state.cases = state.cases.filter(x => x.id !== live.id);
+  if(mode === 'cloud'){ cloudWritePending(p); cloudDeleteCase(live.id); cloudLog('移回待排', snap); }
+  else persist();
+  renderMe(); render();
+  pushUndo('收回待排「' + snap.name + '」', () => {
+    pending = pending.filter(x => x.id !== p.id);
+    cloudDeletePending(p.id);
+    upsertCase(snap);
+    renderMe();
+  });
+  toast('已收回待排清單：' + snap.name);
+}
+
+/* --- 個人頁的拖曳：待排 ⇄ 行事曆 --- */
 let pdrag = null;
 function pdragCleanup(){
   if(!pdrag) return;
+  clearTimeout(pdrag.timer);
   if(pdrag.ghost) pdrag.ghost.remove();
-  document.querySelectorAll('.me-item.dragging').forEach(el => el.classList.remove('dragging'));
-  document.querySelectorAll('.me-day.drop-ok').forEach(el => el.classList.remove('drop-ok'));
+  document.querySelectorAll('.me-item.dragging, .me-case.dragging').forEach(el => el.classList.remove('dragging'));
+  document.querySelectorAll('.drop-ok').forEach(el => el.classList.remove('drop-ok'));
   document.body.classList.remove('dragging-mode');
   pdrag = null;
 }
-$('#me-pend').addEventListener('pointerdown', e => {
+function pdragActivate(){
+  if(!pdrag || pdrag.active) return;
+  pdrag.active = true; pdrag.moved = true;
+  pdrag.el.classList.add('dragging');
+  document.body.classList.add('dragging-mode');
+  const g = document.createElement('div');
+  g.id = 'dragGhost';
+  const o = pdrag.item;
+  g.textContent = (o.name || '') + (o.procedure ? '・' + o.procedure : '');
+  document.body.appendChild(g);
+  pdrag.ghost = g;
+  try{ if(navigator.vibrate) navigator.vibrate(20); }catch(e){}
+}
+$('#meModal').addEventListener('pointerdown', e => {
+  if(e.button > 0) return;
   const it = e.target.closest('.me-item');
-  if(!it || e.button > 0) return;
-  const p = pending.find(x => x.id === it.dataset.id);
-  if(!p) return;
-  pdrag = {p, el: it, startX: e.clientX, startY: e.clientY, active: false, moved: false};
+  if(it){   /* 待排項目：移動 6px 即開始拖曳 */
+    const p = pending.find(x => x.id === it.dataset.id);
+    if(!p) return;
+    pdrag = {kind: 'pending', item: p, el: it, startX: e.clientX, startY: e.clientY, active: false, moved: false};
+    return;
+  }
+  /* 行事曆上的刀：長按 400ms 才開始拖曳（避免與點日期衝突） */
+  let cid = null, el = null;
+  const chip = e.target.closest('.me-case');
+  if(chip){ cid = chip.dataset.id; el = chip; }
+  else{
+    const cnt = e.target.closest('.me-cnt');
+    if(cnt){
+      const mine = myCasesOn(cnt.dataset.date);
+      if(mine.length === 1){ cid = mine[0].id; el = cnt; }
+      else if(mine.length > 1){ toast('這天有 ' + mine.length + ' 台，請長按下方的病人姓名選擇要移動的刀'); return; }
+    }
+  }
+  if(!cid) return;
+  const c = state.cases.find(x => x.id === cid);
+  if(!c) return;
+  pdrag = {kind: 'case', item: c, el, startX: e.clientX, startY: e.clientY, active: false, moved: false};
+  pdrag.timer = setTimeout(pdragActivate, 400);
 });
 document.addEventListener('pointermove', e => {
   if(!pdrag) return;
+  const far = Math.abs(e.clientX - pdrag.startX) > 6 || Math.abs(e.clientY - pdrag.startY) > 6;
   if(!pdrag.active){
-    if(Math.abs(e.clientX - pdrag.startX) < 6 && Math.abs(e.clientY - pdrag.startY) < 6) return;
-    pdrag.active = true; pdrag.moved = true;
-    pdrag.el.classList.add('dragging');
-    document.body.classList.add('dragging-mode');
-    const g = document.createElement('div');
-    g.id = 'dragGhost';
-    g.textContent = pdrag.p.name + (pdrag.p.procedure ? '・' + pdrag.p.procedure : '');
-    document.body.appendChild(g);
-    pdrag.ghost = g;
+    if(pdrag.kind === 'pending' && far) pdragActivate();
+    else if(pdrag.kind === 'case' && far){ pdragCleanup(); }   /* 長按未成立就移動 → 視為捲動 */
+    if(!pdrag || !pdrag.active) return;
   }
   pdrag.ghost.style.left = e.clientX + 'px';
   pdrag.ghost.style.top = e.clientY + 'px';
-  document.querySelectorAll('.me-day.drop-ok').forEach(el => el.classList.remove('drop-ok'));
+  document.querySelectorAll('.drop-ok').forEach(el => el.classList.remove('drop-ok'));
   const el = document.elementFromPoint(e.clientX, e.clientY);
   const day = el && el.closest('.me-day:not(.pad)');
-  if(day) day.classList.add('drop-ok');
-  pdrag.target = day ? day.dataset.date : null;
+  const pendBox = el && el.closest('#me-pend');
+  pdrag.target = null;
+  if(day){ day.classList.add('drop-ok'); pdrag.target = {type: 'day', date: day.dataset.date}; }
+  else if(pendBox && pdrag.kind === 'case'){ pendBox.classList.add('drop-ok'); pdrag.target = {type: 'pend'}; }
 });
 document.addEventListener('pointerup', () => {
   if(!pdrag) return;
-  const {p, target, moved} = pdrag;
+  const {kind, item, target, moved} = pdrag;
   pdragCleanup();
-  if(moved && target) placeOnDay(p, target);
+  if(moved) suppressNextClick();   /* 拖曳後不要順便觸發「點日期跳週」或「開啟編輯」 */
+  if(!moved || !target) return;
+  if(target.type === 'day'){
+    if(kind === 'pending') placeOnDay(item, target.date);
+    else moveCaseToDay(item, target.date);
+  }else if(target.type === 'pend' && kind === 'case'){
+    caseToPending(item);
+  }
 });
 
 $('#userBadge').onclick = () => { if(currentUser) openMeModal(); };
@@ -2861,6 +2967,16 @@ document.addEventListener('keydown', e => {
 });
 
 /* ================= 啟動 ================= */
+/* 任一視窗開啟時鎖住背後排程表的捲動（各處以 class 控制顯示，統一用 observer 偵測） */
+(function watchModals(){
+  const overlays = [...document.querySelectorAll('.overlay')];
+  const sync = () => document.body.classList.toggle('modal-open',
+    overlays.some(o => !o.classList.contains('hidden')));
+  const mo = new MutationObserver(sync);
+  overlays.forEach(o => mo.observe(o, {attributes: true, attributeFilter: ['class']}));
+  sync();
+})();
+
 (async function boot(){
   $('#jumpDate').value = ymd(new Date());
   render();
