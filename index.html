@@ -81,6 +81,14 @@ td.timecell{
   position:sticky; left:32px; z-index:3; background:#fff;
   color:#444; font-size:11px; text-align:center; padding:2px 1px;
 }
+/* 時段負責醫師列 */
+tr.lead td{background:#fff8e1; border-bottom:1px solid #e8d48a}
+tr.lead td.timecell{background:#fbf1cd; font-weight:bold; color:#7a5c00}
+td.leadcell{cursor:pointer; color:#7a5c00; font-size:12px; white-space:nowrap}
+td.leadcell:hover{background:#fdf0c2}
+td.leadcell b{font-size:13px; color:#5c4500}
+td.leadcell .lead-empty{color:#bba;}
+
 tr.extra td{background:#e9e9e9}
 tr.extra td.timecell{background:#e2e2e2; font-weight:bold}
 tr.pm-start td{border-top:2px solid #999}
@@ -573,6 +581,23 @@ body.modal-open .overlay, body.modal-open .dialog{touch-action:auto}
   </div>
 </div>
 
+<!-- 時段負責醫師 -->
+<div class="overlay hidden" id="leadModal">
+  <div class="dialog lg-dialog">
+    <h2>時段負責醫師</h2>
+    <p class="lg-hint" id="lead-sub"></p>
+    <div class="lg-form">
+      <label>負責醫師<input id="lead-name" list="dl-physician" autocomplete="off" placeholder="可從下拉選單挑選"></label>
+    </div>
+    <div class="dialog-actions">
+      <button id="lead-clear" class="danger">清除</button>
+      <span class="spacer"></span>
+      <button id="lead-cancel">取消</button>
+      <button id="lead-save" class="primary">儲存</button>
+    </div>
+  </div>
+</div>
+
 <!-- 個人手術排程管理 -->
 <div class="overlay hidden" id="meModal">
   <div class="dialog me-dialog">
@@ -1004,12 +1029,36 @@ function tbodyHtml(date){
       for(let k = 1; k < eff; k++) byRoom[c.room][DAY_SLOTS[i+k]] = {cover: true, ownerSlot: c.slot};
     });
 
+  /* 週一～週五在 8:00 與 13:00 之前各插入一列「時段負責醫師」 */
+  const withLead = hasLeadRows(date);
+  const rowPlan = [];
+  if(withLead) rowPlan.push({lead: 'am'});
+  DAY_SLOTS.forEach(s => {
+    if(withLead && s === '1300') rowPlan.push({lead: 'pm'});
+    rowPlan.push({slot: s});
+  });
+
   let h = `<tbody class="day${key===ymd(new Date())?' today':''}" data-date="${key}">`;
-  DAY_SLOTS.forEach((s,ri)=>{
+  rowPlan.forEach((row, ri) => {
+    if(row.lead){
+      h += `<tr class="lead">`;
+      if(ri === 0){
+        h += `<td class="daycell" rowspan="${rowPlan.length}" title="${WEEKNAMES[date.getDay()]} ${md(date)}"><div>${WEEKNAMES[date.getDay()].slice(2)}</div><div class="d">${md(date)}</div></td>`;
+      }
+      h += `<td class="timecell" title="時段負責醫師">${row.lead === 'am' ? '上午' : '下午'}</td>`;
+      for(let r = 0; r < R; r++){
+        const nm = leadName(key, site, r, row.lead);
+        h += `<td class="leadcell${r===1?' rs':''}" colspan="${COLS.length}" data-date="${key}" data-room="${r}" data-sess="${row.lead}"
+          title="點此設定該時段的負責醫師">時段負責醫師：${nm ? '<b>' + esc(nm) + '</b>' : '<span class="lead-empty">（點此設定）</span>'}</td>`;
+      }
+      h += '</tr>';
+      return;
+    }
+    const s = row.slot;
     const cls = (s[0]==='X' ? 'extra' : '') + (s==='1300' ? ' pm-start' : '');
     h += `<tr class="${cls}" data-slot="${s}">`;
     if(ri === 0){
-      h += `<td class="daycell" rowspan="${DAY_SLOTS.length}" title="${WEEKNAMES[date.getDay()]} ${md(date)}"><div>${WEEKNAMES[date.getDay()].slice(2)}</div><div class="d">${md(date)}</div></td>`;
+      h += `<td class="daycell" rowspan="${rowPlan.length}" title="${WEEKNAMES[date.getDay()]} ${md(date)}"><div>${WEEKNAMES[date.getDay()].slice(2)}</div><div class="d">${md(date)}</div></td>`;
     }
     h += `<td class="timecell" title="${slotLabel(s)}">${slotShort(s)}</td>`;
     for(let r=0; r<R; r++){
@@ -1839,6 +1888,13 @@ async function connectCloud(key, opts){
       attemptDailyBackup();   /* 只在拿到伺服器最新資料後才備份 */
     }
   }, e => { setStatus('⚠ 雲端連線中斷，自動重試中…'); toast('雲端連線錯誤：' + e.message); cloudRetryReconnect(); }));
+  /* 監聽時段負責醫師 */
+  cloud.unsubs.push(fsM.onSnapshot(fsM.collection(db, 'teams', key, 'leads'), s => {
+    const m = Object.create(null);
+    s.forEach(d => { const v = d.data(); if(v && v.name) m[d.id] = String(v.name); });
+    leads = m;
+    if(!settingsOpen()) render();
+  }, e => { /* 讀取失敗不影響主排程 */ }));
   /* 監聽待排手術（尚未決定日期的刀） */
   cloud.unsubs.push(fsM.onSnapshot(fsM.collection(db, 'teams', key, 'pending'), s => {
     const arr = [];
@@ -1934,6 +1990,63 @@ async function attemptDailyBackup(force){
     if(force) toast('已備份到指定資料夾');
   }catch(e){ if(force) toast('備份失敗：' + e.message); }
 }
+
+/* ================= 時段負責醫師（週一～週五，上午／下午各一位） ================= */
+let leads = Object.create(null);   /* id → 醫師姓名 */
+let leadEditing = null;
+
+function leadId(date, siteKey, room, sess){ return (siteKey || 'hc') + '_' + date + '_' + room + '_' + sess; }
+function leadName(date, siteKey, room, sess){ return leads[leadId(date, siteKey, room, sess)] || ''; }
+function hasLeadRows(date){ const d = date.getDay(); return d >= 1 && d <= 5; }   /* 只有週一～週五 */
+
+function cloudWriteLead(id, rec){
+  if(mode !== 'cloud' || !cloud) return;
+  const {fsM, db, key} = cloud;
+  (rec ? fsM.setDoc(fsM.doc(db, 'teams', key, 'leads', id), rec)
+       : fsM.deleteDoc(fsM.doc(db, 'teams', key, 'leads', id)))
+    .catch(e => toast('負責醫師儲存失敗：' + e.message));
+}
+function openLeadModal(date, siteKey, room, sess){
+  if(mode === 'cloud' && !currentUser){ ensureLogin(); return; }
+  leadEditing = {date, site: siteKey, room, sess};
+  const d = new Date(date + 'T00:00:00');
+  $('#lead-sub').textContent = md(d) + '（' + WEEKNAMES[d.getDay()].slice(2) + '）'
+    + (sess === 'am' ? ' 上午' : ' 下午') + '　'
+    + (siteKey === 'bm' ? (state.bmRoomName || 'SIEMENS') : (state.roomNames[room] || ''));
+  refreshDatalists();
+  $('#lead-name').value = leadName(date, siteKey, room, sess);
+  $('#leadModal').classList.remove('hidden');
+  setTimeout(() => $('#lead-name').focus(), 50);
+}
+function saveLead(clear){
+  if(!leadEditing) return;
+  const {date, site: s, room, sess} = leadEditing;
+  const id = leadId(date, s, room, sess);
+  const name = clear ? '' : $('#lead-name').value.trim();
+  const before = leads[id] || '';
+  if(name) leads[id] = name; else delete leads[id];
+  const rec = name ? {id, date, site: s, room, sess, name,
+    updatedBy: currentUser || '', updatedByName: whoLabel() || '', updatedAt: new Date().toISOString()} : null;
+  if(mode === 'cloud'){
+    cloudWriteLead(id, rec);
+    cloudLog('負責醫師', {name: (name || '(清除)') + '｜' + md(new Date(date + 'T00:00:00')) + (sess === 'am' ? ' 上午' : ' 下午'), date, site: s, room});
+  }else persist();
+  $('#leadModal').classList.add('hidden');
+  leadEditing = null;
+  render();
+  pushUndo('時段負責醫師', () => {
+    if(before) leads[id] = before; else delete leads[id];
+    cloudWriteLead(id, before ? {id, date, site: s, room, sess, name: before} : null);
+    render();
+  });
+  if(!clear) learnOption('physicians', name) && cloudLearnOptions({physicians: [name]});
+}
+$('#lead-save').onclick = () => saveLead(false);
+$('#lead-clear').onclick = () => saveLead(true);
+$('#lead-cancel').onclick = () => { $('#leadModal').classList.add('hidden'); leadEditing = null; };
+$('#leadModal').addEventListener('keydown', e => {
+  if(e.key === 'Enter' && !e.isComposing && e.target.tagName === 'INPUT'){ e.preventDefault(); saveLead(false); }
+});
 
 /* ================= 個人手術排程管理（月曆＋待排刀） ================= */
 let pending = [];              /* 待排手術（尚未決定日期） */
@@ -2650,6 +2763,9 @@ function dragValidate(c, t){
   if(clash) return {ok: false, msg: '已排「' + clash.name + '」'};
   return {ok: true, msg: ''};
 }
+/* 依時段取得該列（不能用序號：週一～週五多了「時段負責醫師」列會錯位） */
+function slotRow(tb, slot){ return tb && tb.querySelector('tr[data-slot="' + slot + '"]'); }
+
 function dragUpdate(x, y){
   if(!drag || !drag.active) return;
   drag.ghost.style.left = x + 'px';
@@ -2658,12 +2774,13 @@ function dragUpdate(x, y){
   const z = drag.zone;
   if(!t){ z.style.display = 'none'; return; }
   const v = dragValidate(drag.c, t);
-  const rows = t.tbody.querySelectorAll('tr');
   const i = DAY_SLOTS.indexOf(t.slot);
-  const last = Math.min(i + (drag.c.span || 1) - 1, rows.length - 1);
+  const lastIdx = Math.min(i + (drag.c.span || 1) - 1, DAY_SLOTS.length - 1);
+  const rTop = slotRow(t.tbody, DAY_SLOTS[i]), rBot = slotRow(t.tbody, DAY_SLOTS[lastIdx]);
+  if(!rTop || !rBot){ z.style.display = 'none'; return; }
   const sr = $('#scroll').getBoundingClientRect();
-  const top = Math.max(rows[i].getBoundingClientRect().top, sr.top);
-  const bottom = Math.min(rows[last].getBoundingClientRect().bottom, sr.bottom);
+  const top = Math.max(rTop.getBoundingClientRect().top, sr.top);
+  const bottom = Math.min(rBot.getBoundingClientRect().bottom, sr.bottom);
   if(bottom <= top){ z.style.display = 'none'; return; }
   z.style.display = 'block';
   z.style.left = ($('#grid').getBoundingClientRect().left + W_DAY + W_TIME + t.room * COLS_W) + 'px';
@@ -2763,12 +2880,13 @@ function rdragCleanup(){
 function rdragDraw(){
   const c = rdrag.c, tb = [...document.querySelectorAll('tbody[data-date]')].find(x => x.dataset.date === c.date);
   if(!tb){ return; }
-  const rows = tb.querySelectorAll('tr');
-  const i = DAY_SLOTS.indexOf(c.slot), last = Math.min(i + rdrag.span - 1, rows.length - 1);
-  const sr = $('#scroll').getBoundingClientRect();
-  const top = Math.max(rows[i].getBoundingClientRect().top, sr.top);
-  const bottom = Math.min(rows[last].getBoundingClientRect().bottom, sr.bottom);
+  const i = DAY_SLOTS.indexOf(c.slot), last = Math.min(i + rdrag.span - 1, DAY_SLOTS.length - 1);
+  const rTop = slotRow(tb, DAY_SLOTS[i]), rBot = slotRow(tb, DAY_SLOTS[last]);
   const z = rdrag.zone;
+  if(!rTop || !rBot){ z.style.display = 'none'; return; }
+  const sr = $('#scroll').getBoundingClientRect();
+  const top = Math.max(rTop.getBoundingClientRect().top, sr.top);
+  const bottom = Math.min(rBot.getBoundingClientRect().bottom, sr.bottom);
   if(bottom <= top){ z.style.display = 'none'; return; }
   z.style.display = 'block';
   z.style.left = ($('#grid').getBoundingClientRect().left + W_DAY + W_TIME + c.room * COLS_W) + 'px';
@@ -2804,11 +2922,11 @@ function rdragUpdate(x, y){
   const c = rdrag.c;
   const tb = [...document.querySelectorAll('tbody[data-date]')].find(t => t.dataset.date === c.date);
   if(tb){
-    const rows = tb.querySelectorAll('tr');
     const i = DAY_SLOTS.indexOf(c.slot);
     let j = i;
-    for(let k = i; k < rows.length; k++){
-      if(y >= rows[k].getBoundingClientRect().top) j = k; else break;
+    for(let k = i; k < DAY_SLOTS.length; k++){
+      const r = slotRow(tb, DAY_SLOTS[k]);
+      if(r && y >= r.getBoundingClientRect().top) j = k; else break;
     }
     rdrag.span = Math.max(1, Math.min(j - i + 1, rdrag.max));
   }
@@ -2897,6 +3015,8 @@ document.addEventListener('pointercancel', rdragCleanup);
 window.addEventListener('blur', rdragCleanup);
 
 $('#grid').addEventListener('click', e => {
+  const ld = e.target.closest('td.leadcell');   /* 時段負責醫師 */
+  if(ld){ openLeadModal(ld.dataset.date, site, +ld.dataset.room, ld.dataset.sess); return; }
   const dp = e.target.closest('span.dup');   /* 時段重疊的排程：點擊開啟調整 */
   if(dp){ const c = state.cases.find(x => x.id === dp.dataset.id); if(c) openCaseModal(c); return; }
   const cx = e.target.closest('span.cxl');   /* 劃線的已取消排程：點擊檢視/復原 */
@@ -3118,6 +3238,7 @@ document.addEventListener('keydown', e => {
     if(!$('#caseModal').classList.contains('hidden')) closeCaseModal();
     else if(!$('#settingsModal').classList.contains('hidden')){ $('#settingsModal').classList.add('hidden'); render(); }
     else if(!$('#importModal').classList.contains('hidden')) $('#importModal').classList.add('hidden');
+    else if(!$('#leadModal').classList.contains('hidden')){ $('#leadModal').classList.add('hidden'); leadEditing = null; }
     else if(!$('#pendModal').classList.contains('hidden')){ $('#pendModal').classList.add('hidden'); pendEditing = null; }
     else if(!$('#meModal').classList.contains('hidden')) $('#meModal').classList.add('hidden');
     else if(!$('#pwModal').classList.contains('hidden')) $('#pwModal').classList.add('hidden');
