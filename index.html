@@ -135,29 +135,12 @@ td.filled.done{background:#d9efdb; color:#1b5e20}
 /* 兩間導管室之間的粗分隔線 */
 #grid .rs{border-left:3px solid #555}
 
-/* 登入／密碼／異動紀錄 */
-.lg-dialog{max-width:420px}
-.lg-form{display:flex; flex-direction:column; gap:10px}
-.lg-form label{display:flex; flex-direction:column; gap:4px; font-size:12.5px; color:#555}
-.lg-form input{padding:8px 10px; border:1px solid #bbb; border-radius:8px; font-size:14px; font-family:inherit}
-.log-dialog{max-width:780px}
-#log-list{max-height:60vh; overflow:auto; border:1px solid #ddd; border-radius:6px}
-.log-table{border-collapse:collapse; width:100%; font-size:12.5px}
-.log-table th, .log-table td{border-bottom:1px solid #eee; padding:5px 8px; text-align:left; white-space:nowrap}
-.log-table th{position:sticky; top:0; background:#f5f5f5; z-index:1}
-.log-act-新增{color:#17623b; font-weight:bold}
-.log-act-刪除{color:#b3261e; font-weight:bold}
-.log-act-取消{color:#b26a00; font-weight:bold}
-.log-act-修改, .log-act-復原, .log-act-匯入{color:#1a56a8; font-weight:bold}
-#audit-info{margin-top:10px; color:#777; font-size:12px}
-#userBadge{color:#1a56a8; font-weight:bold; font-size:12.5px}
-
 /* 登入／個人設定／異動紀錄 */
 .lg-dialog{max-width:430px}
 .lg-hint{color:#777; font-size:12.5px; line-height:1.6; margin:0 0 12px}
 .lg-form{display:flex; flex-direction:column; gap:10px}
 .lg-form label{display:flex; flex-direction:column; gap:4px; font-size:12.5px; color:#555}
-.lg-form input{padding:8px 10px; border:1px solid #bbb; border-radius:8px; font-size:14px; font-family:inherit}
+.lg-form input, .lg-form select{padding:8px 10px; border:1px solid #bbb; border-radius:8px; font-size:14px; font-family:inherit}
 .lg-form .lg-hint{margin:0}
 .lg-sep{border:none; border-top:1px solid #eee; margin:4px 0 0; width:100%}
 .log-dialog{max-width:820px}
@@ -382,7 +365,7 @@ body.modal-open .overlay, body.modal-open .dialog{touch-action:auto}
   .form-grid input, .form-grid select{height:36px; line-height:1.2; box-sizing:border-box}
   .form-grid input[type=date]{-webkit-appearance:none; appearance:none; min-height:0}
   .form-grid textarea{height:36px; min-height:36px}   /* 備註列高與其他欄位一致，需要時可自行拉高 */
-  .lg-form input{font-size:16px}
+  .lg-form input, .lg-form select{font-size:16px}
   .op-row{margin-top:10px; padding:8px 9px; gap:6px; font-size:12px}
   .op-row .op-gap{margin-left:0}
   /* 按鈕列固定在視窗底部，內容再長也不會被切掉 */
@@ -570,6 +553,12 @@ body.modal-open .overlay, body.modal-open .dialog{touch-action:auto}
     <p class="lg-hint" id="pw-hint">設定你的姓名（會顯示在異動紀錄中），並可修改密碼。</p>
     <div class="lg-form">
       <label>姓名<input id="pw-name" autocomplete="name" placeholder="例：王小明"></label>
+      <label>起始預設的醫院
+        <select id="pw-site">
+          <option value="hc">新竹醫院</option>
+          <option value="bm">生醫醫院</option>
+        </select>
+      </label>
       <hr class="lg-sep">
       <label>目前密碼<input id="pw-old" type="password" autocomplete="current-password"></label>
       <label>新密碼（至少 4 碼；不改密碼請留空）<input id="pw-new" type="password" autocomplete="new-password"></label>
@@ -2312,6 +2301,7 @@ $('#pendModal').addEventListener('keydown', e => {
 /* ================= 帳號（員工編號登入）與異動紀錄 ================= */
 let currentUser = null;   /* 已登入的員工編號 */
 let currentName = '';     /* 顯示姓名（沒設定時以員工編號代替） */
+let currentHome = 'hc';   /* 登入後預設進入的院區 */
 
 const PW_ITER = 100000;
 async function sha256Hex(str){
@@ -2342,17 +2332,19 @@ function ensureLogin(){
   try{ saved = JSON.parse(localStorage.getItem('cathlab-user') || 'null'); }catch(e){}
   if(saved && saved.team === cloud.key && saved.empId){
     currentUser = saved.empId; currentName = saved.name || '';
+    currentHome = saved.home === 'bm' ? 'bm' : 'hc';
     updateUserBadge();
-    goHomeView();          /* 已記住帳號：直接進入「新竹醫院＋今日」 */
+    goHomeView();          /* 已記住帳號：直接進入預設院區＋今日 */
     return;
   }
-  currentUser = null; currentName = ''; updateUserBadge();
+  currentUser = null; currentName = ''; currentHome = 'hc'; updateUserBadge();
   $('#loginOverlay').classList.remove('hidden');
   setTimeout(() => $('#lg-id').focus(), 50);
 }
-function setUser(empId, name){
+function setUser(empId, name, home){
   currentUser = empId; currentName = name || '';
-  try{ localStorage.setItem('cathlab-user', JSON.stringify({empId, name: currentName, team: cloud.key})); }catch(e){}
+  if(home !== undefined) currentHome = home === 'bm' ? 'bm' : 'hc';
+  try{ localStorage.setItem('cathlab-user', JSON.stringify({empId, name: currentName, home: currentHome, team: cloud.key})); }catch(e){}
   updateUserBadge();
   $('#loginOverlay').classList.add('hidden');
   $('#lg-pw').value = '';
@@ -2375,18 +2367,20 @@ async function loginSubmit(){
       if(u.algo !== 'pbkdf2'){   /* 舊雜湊格式透明升級 */
         try{ await fsM.setDoc(ref, Object.assign({}, u, await makePassRecord(u.mustChange ? id : pw))); }catch(e){}
       }
-      setUser(id, u.name || '');
+      setUser(id, u.name || '', u.defaultSite);
       goHomeView();
       toast('👤 ' + whoLabel() + ' 已登入');
-      if(u.mustChange || !u.name) openPwModal(true);
+      /* 只有還沒設定姓名時才跳設定視窗；仍用預設密碼者僅提醒，避免每次登入都被打斷 */
+      if(!u.name) openPwModal(true);
+      else if(u.mustChange) setTimeout(() => toast('提醒：你仍在使用預設密碼，可在「⚙ 設定 → 個人設定」修改'), 3600);
     }else{
       /* 第一次登入：帳號密碼都是員工編號（不分大小寫）→ 自動建立帳號 */
       if(pw.trim().toUpperCase() !== id){
         alert('查無此帳號「' + id + '」。\n第一次登入請以員工編號作為帳號與密碼（例如 G00212 / G00212）。');
         return;
       }
-      await fsM.setDoc(ref, Object.assign({empId: id, name: '', mustChange: true, createdAt: new Date().toISOString()}, await makePassRecord(id)));
-      setUser(id, '');
+      await fsM.setDoc(ref, Object.assign({empId: id, name: '', defaultSite: 'hc', mustChange: true, createdAt: new Date().toISOString()}, await makePassRecord(id)));
+      setUser(id, '', 'hc');
       goHomeView();
       cloudLog('建立帳號', {name: id});
       toast('👤 已建立帳號 ' + id);
@@ -2402,12 +2396,14 @@ function openPwModal(firstTime){
     ? '請輸入你的姓名（會顯示在異動紀錄中，讓大家知道是誰排的），並建議修改預設密碼。'
     : '可修改顯示姓名與密碼。姓名會顯示在異動紀錄中。';
   $('#pw-name').value = currentName || '';
+  $('#pw-site').value = currentHome === 'bm' ? 'bm' : 'hc';
   $('#pw-old').value = ''; $('#pw-new').value = ''; $('#pw-new2').value = '';
   $('#pwModal').classList.remove('hidden');
   setTimeout(() => $('#pw-name').focus(), 50);
 }
 async function savePersonal(){
   const name = $('#pw-name').value.trim();
+  const home = $('#pw-site').value === 'bm' ? 'bm' : 'hc';
   const oldPw = $('#pw-old').value, npw = $('#pw-new').value, npw2 = $('#pw-new2').value;
   if(!name){ alert('請輸入姓名'); return; }
   const changingPw = !!(npw || npw2);
@@ -2423,7 +2419,7 @@ async function savePersonal(){
     const snap = await fsM.getDoc(ref);
     if(!snap.exists()){ alert('帳號資料不存在，請重新登入'); return; }
     const u = snap.data();
-    let patch = {name, updatedAt: new Date().toISOString()};
+    let patch = {name, defaultSite: home, updatedAt: new Date().toISOString()};
     if(changingPw){
       let okOld = await verifyPassword(u, oldPw);
       if(!okOld && u.mustChange && oldPw.trim().toUpperCase() === (u.empId || currentUser)) okOld = true;
@@ -2431,9 +2427,11 @@ async function savePersonal(){
       patch = Object.assign(patch, await makePassRecord(npw), {mustChange: false});
     }
     await fsM.setDoc(ref, Object.assign({}, u, patch));
-    setUser(currentUser, name);
+    const homeChanged = currentHome !== home;
+    setUser(currentUser, name, home);
     $('#pwModal').classList.add('hidden');
-    toast(changingPw ? '姓名與密碼已更新' : '姓名已更新');
+    if(homeChanged) goHomeView();   /* 立刻切到新設定的預設院區 */
+    toast(changingPw ? '個人設定與密碼已更新' : '個人設定已更新');
   }catch(e){ alert('儲存失敗：' + e.message); }
   finally{ $('#pw-save').disabled = false; }
 }
@@ -2934,10 +2932,10 @@ function goToday(quiet){
   const delta = tb.getBoundingClientRect().top - sc.getBoundingClientRect().top - headH - 4;
   sc.scrollTop += delta;   /* 直接定位：捲動距離常達數千 px，動畫反而看不清 */
 }
-/* 登入後的預設畫面：新竹醫院 ＋ 今日 */
+/* 登入後的預設畫面：使用者設定的院區 ＋ 今日 */
 function goHomeView(){
-  site = 'hc';
-  try{ localStorage.setItem('cathlab-site', 'hc'); }catch(e){}
+  site = (typeof currentHome === 'string' && currentHome === 'bm') ? 'bm' : 'hc';
+  try{ localStorage.setItem('cathlab-site', site); }catch(e){}
   goToday(true);
 }
 $('#todayBtn').onclick = () => goToday();
