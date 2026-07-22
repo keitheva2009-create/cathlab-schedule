@@ -242,6 +242,11 @@ td.filled.done{background:#d9efdb; color:#1b5e20}
   .me-day{min-height:46px}
 }
 
+/* 從個人行事曆跳過來時的閃爍提示 */
+@keyframes flashHit{0%,100%{box-shadow:inset 0 0 0 0 rgba(255,193,7,0)}35%,65%{box-shadow:inset 0 0 0 3px #ffb300}}
+td.flash{animation:flashHit 1.2s ease-in-out 3}
+span.flash-cxl{background:#ffe082; border-radius:4px}
+
 /* 時段重疊警示（多台電腦同時排入） */
 .dup{display:block; color:#b3261e; font-size:11.5px; font-weight:bold; cursor:pointer; white-space:nowrap; overflow:hidden; text-overflow:ellipsis}
 .dup:hover{text-decoration:underline}
@@ -2470,8 +2475,39 @@ $('#me-pend').addEventListener('click', e => {
   const p = pending.find(x => x.id === it.dataset.id);
   if(p) openPendModal(p);
 });
-$('#me-cal').addEventListener('click', e => {   /* 點日期 → 跳到主排程該週 */
-  const d = e.target.closest('.me-day:not(.pad)');
+/* 點行事曆上的病人姓名 → 直接跳到主排程的那一天、那一台並閃爍標示 */
+function gotoCaseInGrid(id){
+  const c = state.cases.find(x => x.id === id);
+  if(!c){ toast('這筆排程已不存在'); return; }
+  const s = c.site === 'bm' ? 'bm' : 'hc';
+  if(site !== s){ site = s; try{ localStorage.setItem('cathlab-site', s); }catch(e){} }
+  weekStart = mondayOf(new Date(c.date + 'T00:00:00'));
+  $('#jumpDate').value = c.date;
+  $('#meModal').classList.add('hidden');
+  render();
+  /* 關閉視窗會解除背景捲動鎖，但要等一個時間點才生效，否則捲不動 */
+  setTimeout(() => {
+    const tds = [...document.querySelectorAll('td.filled')].filter(x => x.dataset.id === id);
+    if(tds.length){
+      tds[0].scrollIntoView({block: 'center', inline: 'center'});
+      tds.forEach(td => { td.classList.add('flash'); setTimeout(() => td.classList.remove('flash'), 3600); });
+      return;
+    }
+    const alt = [...document.querySelectorAll('span.cxl')].find(x => x.dataset.cxlId === id);
+    if(alt){
+      alt.scrollIntoView({block: 'center', inline: 'center'});
+      alt.classList.add('flash-cxl');
+      setTimeout(() => alt.classList.remove('flash-cxl'), 3600);
+      return;
+    }
+    const wd = new Date(c.date + 'T00:00:00').getDay();
+    toast((wd === 6 || wd === 0) ? '該排程在' + WEEKNAMES[wd] + '，目前未顯示；可至「⚙ 設定」開啟' : '已跳到該週，但畫面上找不到這筆排程');
+  }, 0);
+}
+$('#me-cal').addEventListener('click', e => {
+  const chip = e.target.closest('.me-case');     /* 點病人 → 跳到該台刀 */
+  if(chip){ gotoCaseInGrid(chip.dataset.id); return; }
+  const d = e.target.closest('.me-day:not(.pad)');   /* 點日期空白處 → 跳到該週 */
   if(!d) return;
   weekStart = mondayOf(new Date(d.dataset.date + 'T00:00:00'));
   $('#jumpDate').value = d.dataset.date;
