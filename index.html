@@ -2701,7 +2701,95 @@ function dragDrop(t){
   }});
 }
 
+/* ---- 右鍵長按：拉長／縮短手術佔用時間 ---- */
+let rdrag = null;
+/* 這筆排程往後最多能佔幾格（遇到別台刀或午休／收工就停） */
+function maxSpanAt(c){
+  const i = DAY_SLOTS.indexOf(c.slot), lim = maxSpan(c.slot);
+  let n = 1;
+  for(let k = 1; k < lim; k++){
+    const idx = i + k;
+    const busy = state.cases.some(o => {
+      if(o.id === c.id || o.cancelledAt) return false;
+      if((o.site || 'hc') !== (c.site || 'hc') || o.date !== c.date || o.room !== c.room) return false;
+      const [b1, b2] = rangeOf(o);
+      return idx >= b1 && idx <= b2;
+    });
+    if(busy) break;
+    n++;
+  }
+  return n;
+}
+function rdragCleanup(){
+  if(!rdrag) return;
+  clearTimeout(rdrag.timer);
+  if(rdrag.ghost) rdrag.ghost.remove();
+  if(rdrag.zone) rdrag.zone.remove();
+  document.body.classList.remove('dragging-mode');
+  rdrag = null;
+}
+function rdragDraw(){
+  const c = rdrag.c, tb = [...document.querySelectorAll('tbody[data-date]')].find(x => x.dataset.date === c.date);
+  if(!tb){ return; }
+  const rows = tb.querySelectorAll('tr');
+  const i = DAY_SLOTS.indexOf(c.slot), last = Math.min(i + rdrag.span - 1, rows.length - 1);
+  const sr = $('#scroll').getBoundingClientRect();
+  const top = Math.max(rows[i].getBoundingClientRect().top, sr.top);
+  const bottom = Math.min(rows[last].getBoundingClientRect().bottom, sr.bottom);
+  const z = rdrag.zone;
+  if(bottom <= top){ z.style.display = 'none'; return; }
+  z.style.display = 'block';
+  z.style.left = ($('#grid').getBoundingClientRect().left + W_DAY + W_TIME + c.room * COLS_W) + 'px';
+  z.style.top = top + 'px';
+  z.style.width = COLS_W + 'px';
+  z.style.height = (bottom - top) + 'px';
+  z.classList.remove('bad');
+  z.querySelector('.dz-label').textContent = slotLabel(c.slot).split('~')[0] + '~' + slotEnd(DAY_SLOTS[last]) + '（' + spanLabel(rdrag.span) + '）';
+  rdrag.ghost.textContent = c.name + '：' + spanLabel(rdrag.span);
+}
+function rdragActivate(){
+  if(!rdrag || rdrag.active) return;
+  rdrag.active = true;
+  document.body.classList.add('dragging-mode');
+  const g = document.createElement('div');
+  g.id = 'dragGhost';
+  document.body.appendChild(g);
+  rdrag.ghost = g;
+  const z = document.createElement('div');
+  z.id = 'dropZone';
+  z.innerHTML = '<span class="dz-label"></span>';
+  document.body.appendChild(z);
+  rdrag.zone = z;
+  try{ if(navigator.vibrate) navigator.vibrate(20); }catch(e){}
+  rdragDraw();
+}
+function rdragUpdate(x, y){
+  if(!rdrag || !rdrag.active) return;
+  rdrag.ghost.style.left = x + 'px';
+  rdrag.ghost.style.top = y + 'px';
+  const el = document.elementFromPoint(rdrag.colX, y);
+  const tr = el && el.closest('tr[data-slot]');
+  const tb = el && el.closest('tbody[data-date]');
+  if(tr && tb && tb.dataset.date === rdrag.c.date){
+    const j = DAY_SLOTS.indexOf(tr.dataset.slot), i = DAY_SLOTS.indexOf(rdrag.c.slot);
+    if(j >= i) rdrag.span = Math.max(1, Math.min(j - i + 1, rdrag.max));
+  }
+  rdragDraw();
+}
+
 $('#grid').addEventListener('pointerdown', e => {
+  if(e.button === 2){                            /* 右鍵長按 → 調整佔用時間 */
+    if(mode === 'cloud' && !currentUser) return;
+    const td = e.target.closest('td.filled');
+    if(!td) return;
+    const c = state.cases.find(x => x.id === td.dataset.id);
+    if(!c || c.cancelledAt) return;
+    e.preventDefault();
+    const max = maxSpanAt(c);
+    rdrag = {c, span: c.span || 1, max, colX: e.clientX, startY: e.clientY, active: false};
+    rdrag.timer = setTimeout(rdragActivate, 400);
+    return;
+  }
   if(e.button > 0) return;
   if(mode === 'cloud' && !currentUser) return;   /* 未登入不可拖曳移動 */
   if(e.target.closest('span.cxl, span.dup')) return;   /* 這些是點擊開啟，不拖曳 */
@@ -2734,7 +2822,42 @@ document.addEventListener('pointerup', () => {
 document.addEventListener('pointercancel', dragCleanup);
 window.addEventListener('blur', dragCleanup);   /* 指標離開視窗／pointerup 遺失時不卡住 */
 $('#scroll').addEventListener('touchmove', e => { if(drag && drag.active) e.preventDefault(); }, {passive: false});
-$('#grid').addEventListener('contextmenu', e => { if(drag) e.preventDefault(); });
+/* 右鍵在排程上不跳出瀏覽器選單（長按要用來調整手術時間） */
+$('#grid').addEventListener('contextmenu', e => { if(drag || rdrag || e.target.closest('td.filled')) e.preventDefault(); });
+
+/* 右鍵長按：拖曳中／放開套用 */
+document.addEventListener('pointermove', e => {
+  if(!rdrag) return;
+  if(!rdrag.active){
+    if(Math.abs(e.clientY - rdrag.startY) > 10) rdragCleanup();   /* 長按未成立就移動 → 取消 */
+    return;
+  }
+  rdragUpdate(e.clientX, e.clientY);
+});
+document.addEventListener('pointerup', () => {
+  if(!rdrag) return;
+  const {c, span, active} = rdrag;
+  rdragCleanup();
+  if(!active) return;
+  suppressNextClick();
+  const live = state.cases.find(x => x.id === c.id);
+  if(!live || (live.span || 1) === span) return;
+  const before = live.span || 1;
+  live.span = span;
+  live.updatedBy = currentUser || ''; live.updatedByName = whoLabel() || ''; live.updatedAt = new Date().toISOString();
+  if(mode === 'cloud'){ cloudWriteCase(live); cloudLog('改時長', live); } else persist();
+  render();
+  pushUndo('調整「' + live.name + '」時長', () => {
+    const cc = state.cases.find(x => x.id === c.id);
+    if(!cc) return '這筆排程已不存在';
+    if(before > maxSpanAt(cc)) return '原本的時段已被其他排程占用';
+    cc.span = before; writeCase(cc);
+  });
+  const endIdx = DAY_SLOTS.indexOf(live.slot) + span - 1;
+  toast('「' + live.name + '」改為 ' + spanLabel(span) + '（' + slotLabel(live.slot).split('~')[0] + '~' + slotEnd(DAY_SLOTS[endIdx]) + '）');
+});
+document.addEventListener('pointercancel', rdragCleanup);
+window.addEventListener('blur', rdragCleanup);
 
 $('#grid').addEventListener('click', e => {
   const dp = e.target.closest('span.dup');   /* 時段重疊的排程：點擊開啟調整 */
