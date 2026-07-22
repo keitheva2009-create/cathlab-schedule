@@ -706,19 +706,23 @@ const DAY_SLOTS = [...AM,'X1','X2',...PM,'X3','X4'];
 const WEEKNAMES = ['星期日','星期一','星期二','星期三','星期四','星期五','星期六'];
 
 const COLS = [
-  /* 欄寬（依使用者指定比例縮減）；放不下的內容以「…」截斷，滑鼠停留可看全文 */
-  {k:'name',      label:'姓名',     w:74},    /* -20% */
-  {k:'chartNo',   label:'病歷號',   w:72},    /* -20% */
-  {k:'birthday',  label:'生日',     w:85},    /* -15% */
+  /* w＝手機版欄寬（已定案，請勿更動）；wPc＝電腦版欄寬（未填則同手機） */
+  {k:'name',      label:'姓名',     w:74,  wPc:85},   /* 電腦版 +15% */
+  {k:'chartNo',   label:'病歷號',   w:72},
+  {k:'birthday',  label:'生日',     w:85},
   {k:'sex',       label:'性別',     w:38},
   {k:'procedure', label:'術式',     w:50},
   {k:'physician', label:'醫師',     w:58},
   {k:'bed',       label:'床號/醫院', w:74},
-  {k:'detail',    label:'細項',     w:75},    /* -15% */
-  {k:'note',      label:'備註',     w:120},   /* -20% */
+  {k:'detail',    label:'細項',     w:75},
+  {k:'note',      label:'備註',     w:120, wPc:138},  /* 電腦版 +15% */
 ];
 const W_DAY = 32, W_TIME = 40;   /* 時間欄 -10% */
-const COLS_W = COLS.reduce((s, c) => s + c.w, 0);
+/* 手機與電腦各自一套欄寬：手機用 w（固定不動），電腦用 wPc */
+const MOBILE_MQ = '(max-width:640px)';
+function isMobileView(){ return typeof matchMedia === 'function' && matchMedia(MOBILE_MQ).matches; }
+function colW(c){ return isMobileView() ? c.w : (c.wPc || c.w); }
+function colsW(){ return COLS.reduce((s, c) => s + colW(c), 0); }
 
 /* 院區：新竹＝兩間導管室、生醫＝單間（西門子） */
 const SITES = {hc: {label: '新竹醫院'}, bm: {label: '生醫醫院'}};
@@ -727,7 +731,7 @@ try{ if(localStorage.getItem('cathlab-site') === 'bm') site = 'bm'; }catch(e){}
 function siteRooms(){ return site === 'bm' ? [state.bmRoomName || 'SIEMENS'] : state.roomNames; }
 function siteRoomName(r){ return siteRooms()[r] || ''; }
 function roomCls(r){ return site === 'bm' ? 'r1' : 'r' + r; }   /* 生醫單室沿用右側（綠色）樣式 */
-function tableWidth(){ return W_DAY + W_TIME + siteRooms().length * COLS_W; }
+function tableWidth(){ return W_DAY + W_TIME + siteRooms().length * colsW(); }
 
 /* 雲端資料庫設定（Firebase Web 設定為公開資訊，非機密；存取權由團隊金鑰＋安全規則控管） */
 const FIREBASE_CONFIG = {
@@ -1010,7 +1014,7 @@ function render(){
 
 function colgroupHtml(){
   let h = `<colgroup><col style="width:${W_DAY}px"><col style="width:${W_TIME}px">`;
-  siteRooms().forEach(() => COLS.forEach(c => h += `<col style="width:${c.w}px">`));
+  siteRooms().forEach(() => COLS.forEach(c => h += `<col style="width:${colW(c)}px">`));
   return h + '</colgroup>';
 }
 
@@ -2814,7 +2818,7 @@ function dragTargetAt(x, y){
   const tr = el.closest('tr[data-slot]'), tb = el.closest('tbody[data-date]');
   if(!tr || !tb) return null;
   const rel = x - $('#grid').getBoundingClientRect().left - W_DAY - W_TIME;
-  const room = Math.floor(rel / COLS_W);
+  const room = Math.floor(rel / colsW());
   if(rel < 0 || room < 0 || room >= siteRooms().length) return null;
   return {date: tb.dataset.date, room, slot: tr.dataset.slot, tbody: tb};
 }
@@ -2853,9 +2857,9 @@ function dragUpdate(x, y){
   const bottom = Math.min(rBot.getBoundingClientRect().bottom, sr.bottom);
   if(bottom <= top){ z.style.display = 'none'; return; }
   z.style.display = 'block';
-  z.style.left = ($('#grid').getBoundingClientRect().left + W_DAY + W_TIME + t.room * COLS_W) + 'px';
+  z.style.left = ($('#grid').getBoundingClientRect().left + W_DAY + W_TIME + t.room * colsW()) + 'px';
   z.style.top = top + 'px';
-  z.style.width = COLS_W + 'px';
+  z.style.width = colsW() + 'px';
   z.style.height = (bottom - top) + 'px';
   z.classList.toggle('bad', !v.ok && !v.same);
   z.querySelector('.dz-label').textContent = v.ok
@@ -2959,9 +2963,9 @@ function rdragDraw(){
   const bottom = Math.min(rBot.getBoundingClientRect().bottom, sr.bottom);
   if(bottom <= top){ z.style.display = 'none'; return; }
   z.style.display = 'block';
-  z.style.left = ($('#grid').getBoundingClientRect().left + W_DAY + W_TIME + c.room * COLS_W) + 'px';
+  z.style.left = ($('#grid').getBoundingClientRect().left + W_DAY + W_TIME + c.room * colsW()) + 'px';
   z.style.top = top + 'px';
-  z.style.width = COLS_W + 'px';
+  z.style.width = colsW() + 'px';
   z.style.height = (bottom - top) + 'px';
   z.classList.remove('bad');
   z.querySelector('.dz-label').textContent = rangeLabel(c.slot, rdrag.span) + '（' + spanLabel(rdrag.span) + '）';
@@ -3346,6 +3350,14 @@ document.addEventListener('keydown', e => {
     if(!scrollableUnder(e.target, o)) e.preventDefault();     /* 視窗以外／不可捲處 → 不讓背景跟著動 */
   }, {passive: false}));
 })();
+
+/* 視窗跨越手機／電腦分界時，用對應的欄寬重畫 */
+if(typeof matchMedia === 'function'){
+  const mq = matchMedia(MOBILE_MQ);
+  const onChange = () => render();
+  if(mq.addEventListener) mq.addEventListener('change', onChange);
+  else if(mq.addListener) mq.addListener(onChange);
+}
 
 (async function boot(){
   $('#jumpDate').value = ymd(new Date());
