@@ -1049,7 +1049,7 @@ function tbodyHtml(date){
       for(let r = 0; r < R; r++){
         const nm = leadName(key, site, r, row.lead);
         h += `<td class="leadcell${r===1?' rs':''}" colspan="${COLS.length}" data-date="${key}" data-room="${r}" data-sess="${row.lead}"
-          title="點此設定該時段的負責醫師">時段負責醫師：${nm ? '<b>' + esc(nm) + '</b>' : '<span class="lead-empty">（點此設定）</span>'}</td>`;
+          title="時段負責醫師｜點此設定">${nm ? '<b>' + esc(nm) + '</b>' : '<span class="lead-empty">（點此設定負責醫師）</span>'}</td>`;
       }
       h += '</tr>';
       return;
