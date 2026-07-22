@@ -53,7 +53,8 @@ body{
 
 /* ---------- grid ---------- */
 #scroll{flex:1; overflow:auto}
-#grid{border-collapse:separate; border-spacing:0; table-layout:fixed}
+/* 表格比視窗窄時置中（生醫單室最明顯）；比視窗寬時 auto 邊界自動歸零，維持原本的左靠與橫向捲動 */
+#grid{border-collapse:separate; border-spacing:0; table-layout:fixed; margin:0 auto}
 #grid th, #grid td{
   border-right:1px solid var(--line); border-bottom:1px solid var(--line);
   padding:2px 5px; font-weight:normal; text-align:left;
