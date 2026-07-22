@@ -438,10 +438,10 @@ body.modal-open #scroll{overflow:hidden}
       <label class="wide">備註<textarea id="f-note" rows="2"></textarea></label>
     </div>
     <div class="op-row" id="opRow">
-      <span>手術開始：<b id="op-start-time">—</b></span>
+      <span>手術開始：<b id="op-start-time"></b></span>
       <button id="f-start" class="start" type="button">▶ 現在開始</button>
       <button id="f-start-clear" class="op-clear hidden" type="button" title="清除開始時間">✕</button>
-      <span class="op-gap">手術結束：<b id="op-end-time">—</b></span>
+      <span class="op-gap">手術結束：<b id="op-end-time"></b></span>
       <button id="f-end" class="end" type="button">■ 現在結束</button>
       <button id="f-end-clear" class="op-clear hidden" type="button" title="清除結束時間">✕</button>
     </div>
@@ -1074,8 +1074,8 @@ function updateCxlUI(){
   if(cxlDraft) $('#cxl-info').textContent = '⚠ 此排程已於 ' + fmtDT(cxlDraft) + ' 劃線取消（不佔時段，可按「復原排程」恢復）';
 }
 function renderOpUI(){
-  $('#op-start-time').textContent = opStart ? fmtT(opStart) : '—';
-  $('#op-end-time').textContent = opEnd ? fmtT(opEnd) : '—';
+  $('#op-start-time').textContent = opStart ? fmtT(opStart) : '';
+  $('#op-end-time').textContent = opEnd ? fmtT(opEnd) : '';
   $('#f-start-clear').classList.toggle('hidden', !opStart);
   $('#f-end-clear').classList.toggle('hidden', !opEnd);
 }
@@ -1106,8 +1106,8 @@ function openCaseModal(caseObj, preset){
   /* 稽核資訊：誰建立、誰最後修改 */
   const who = x => (c[x + 'ByName'] || c[x + 'By'] || '');
   const ai = [];
-  if(who('created')) ai.push('建立：' + who('created') + (c.createdAt ? '（' + fmtDT(c.createdAt) + '）' : ''));
-  if(who('updated') && (c.updatedAt !== c.createdAt)) ai.push('最後修改：' + who('updated') + '（' + fmtDT(c.updatedAt) + '）');
+  if(who('created')) ai.push('建立：' + who('created'));
+  if(who('updated') && (c.updatedAt !== c.createdAt)) ai.push('最後修改：' + who('updated'));
   $('#audit-info').textContent = ai.join('　｜　');
   $('#audit-info').classList.toggle('hidden', !ai.length);
   $('#f-delete').classList.toggle('hidden', !caseObj);
