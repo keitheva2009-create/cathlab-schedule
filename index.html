@@ -362,8 +362,10 @@ body.modal-open #scroll{overflow:hidden}
 @media (max-width:640px){
   .overlay{padding:10px; align-items:flex-start}
   .dialog{
-    width:94vw; max-width:94vw; max-height:88vh;
-    padding:12px 13px; border-radius:12px; margin-top:2vh;
+    width:94vw; max-width:94vw;
+    max-height:88vh;
+    max-height:calc(100dvh - 24px);   /* 用動態視窗高度，手機網址列才不會把「取消／儲存」擠出畫面 */
+    padding:12px 13px; border-radius:12px; margin-top:0;
   }
   .imp-dialog, .log-dialog, .lg-dialog{max-width:94vw}
   .dialog h2{font-size:15px; margin:0 0 8px}
@@ -375,11 +377,16 @@ body.modal-open #scroll{overflow:hidden}
   /* 日期欄在手機上原生樣式會比其他欄位高很多，統一高度 */
   .form-grid input, .form-grid select{height:36px; line-height:1.2; box-sizing:border-box}
   .form-grid input[type=date]{-webkit-appearance:none; appearance:none; min-height:0}
-  .form-grid textarea{height:auto}
+  .form-grid textarea{height:36px; min-height:36px}   /* 備註列高與其他欄位一致，需要時可自行拉高 */
   .lg-form input{font-size:16px}
   .op-row{margin-top:10px; padding:8px 9px; gap:6px; font-size:12px}
   .op-row .op-gap{margin-left:0}
-  .dialog-actions{margin-top:10px; flex-wrap:wrap; gap:6px}
+  /* 按鈕列固定在視窗底部，內容再長也不會被切掉 */
+  .dialog-actions{
+    margin-top:10px; flex-wrap:wrap; gap:6px;
+    position:sticky; bottom:-12px; background:#fff; z-index:3;
+    padding:8px 0 12px; margin-bottom:-12px; border-top:1px solid #eee;
+  }
   .dialog-actions button{padding:8px 13px}
   #cxl-info, #audit-info{font-size:11.5px}
 }
@@ -724,10 +731,20 @@ function slotEnd(s){ const m = +s.slice(0,2) * 60 + +s.slice(2) + 60; return Mat
 function slotLabel(s){ return s[0]==='X' ? '加台'+s[1] : (+s.slice(0,2)) + ':' + s.slice(2) + '~' + slotEnd(s); }
 /* 表格時間欄用（欄位窄，只顯示起始時間） */
 function slotShort(s){ return s[0]==='X' ? '加'+s[1] : (+s.slice(0,2)) + ':' + s.slice(2); }
+/* 一天的時段是連續的：8~11點 → 加1 加2 → 13~16點 → 加3 加4，
+   所以加台格也是 1 小時單位，可以和上下相鄰的格子連在一起 */
 function maxSpan(s){
-  if(s[0]==='X') return 1;
-  const a = AM.indexOf(s); if(a >= 0) return AM.length - a;
-  const p = PM.indexOf(s); return p >= 0 ? PM.length - p : 1;
+  const i = DAY_SLOTS.indexOf(s);
+  return i < 0 ? 1 : DAY_SLOTS.length - i;
+}
+/* 「8:00~11:00」「加台1~13:00」這種跨格顯示 */
+function rangeLabel(s, n){
+  if((n || 1) <= 1) return slotLabel(s);
+  const i = DAY_SLOTS.indexOf(s);
+  const last = DAY_SLOTS[Math.min(i + n - 1, DAY_SLOTS.length - 1)];
+  const a = s[0] === 'X' ? slotLabel(s) : slotLabel(s).split('~')[0];
+  const b = last[0] === 'X' ? slotLabel(last) : slotEnd(last);
+  return a + '~' + b;
 }
 function spanLabel(n){ return n + ' 小時'; }
 function rangeOf(c){ const i = DAY_SLOTS.indexOf(c.slot); return [i, i + (c.span||1) - 1]; }
@@ -1537,7 +1554,7 @@ function parseScheduleGrid(sm, year, maxRooms){
       if(mg){
         const want = mg.r2 - mg.r1 + 1;
         span = Math.min(want, maxSpan(slot));
-        if(want > span) warnings.push('「' + name + '」（' + dateKey + ' ' + slotLabel(slot) + '）的合併範圍跨越午休或加台，已縮短為 ' + spanLabel(span) + '，請確認其餘時段是否需另行排程');
+        if(want > span) warnings.push('「' + name + '」（' + dateKey + ' ' + slotLabel(slot) + '）的合併範圍超出當日時段，已縮短為 ' + spanLabel(span) + '，請確認其餘時段是否需另行排程');
       }
       let birthday = gv('birthday');
       if(/^\d+(\.\d+)?$/.test(birthday)){ const n = +birthday; if(n > 3000 && n < 80000) birthday = excelDateToYmdSlash(n); }
@@ -2744,7 +2761,7 @@ function rdragDraw(){
   z.style.width = COLS_W + 'px';
   z.style.height = (bottom - top) + 'px';
   z.classList.remove('bad');
-  z.querySelector('.dz-label').textContent = slotLabel(c.slot).split('~')[0] + '~' + slotEnd(DAY_SLOTS[last]) + '（' + spanLabel(rdrag.span) + '）';
+  z.querySelector('.dz-label').textContent = rangeLabel(c.slot, rdrag.span) + '（' + spanLabel(rdrag.span) + '）';
   rdrag.ghost.textContent = c.name + '：' + spanLabel(rdrag.span);
 }
 function rdragActivate(){
@@ -2853,8 +2870,7 @@ document.addEventListener('pointerup', () => {
     if(before > maxSpanAt(cc)) return '原本的時段已被其他排程占用';
     cc.span = before; writeCase(cc);
   });
-  const endIdx = DAY_SLOTS.indexOf(live.slot) + span - 1;
-  toast('「' + live.name + '」改為 ' + spanLabel(span) + '（' + slotLabel(live.slot).split('~')[0] + '~' + slotEnd(DAY_SLOTS[endIdx]) + '）');
+  toast('「' + live.name + '」改為 ' + spanLabel(span) + '（' + rangeLabel(live.slot, span) + '）');
 });
 document.addEventListener('pointercancel', rdragCleanup);
 window.addEventListener('blur', rdragCleanup);
