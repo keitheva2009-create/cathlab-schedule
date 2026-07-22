@@ -63,9 +63,12 @@ body{
 #grid{border-collapse:separate; border-spacing:0; table-layout:fixed; margin:0 auto}
 #grid th, #grid td{
   border-right:1px solid var(--line); border-bottom:1px solid var(--line);
-  padding:2px 5px; font-weight:normal; text-align:left;
+  padding:2px 5px; font-weight:normal;
+  text-align:center; vertical-align:middle;      /* 預設水平、垂直置中 */
   overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
 }
+/* 例外：負責醫師列與備註欄維持靠左對齊 */
+#grid td.leadcell, #grid td.filled.c-note{text-align:left}
 #grid thead th{position:sticky; background:#fff; z-index:5}
 #grid thead tr.rooms th{top:0; height:30px; font-weight:bold; text-align:center; font-size:14px}
 #grid thead tr.cols  th{top:30px; height:28px; background:#f5f5f5; font-weight:bold; border-bottom:2px solid var(--dark)}
@@ -78,8 +81,8 @@ body{
 
 td.daycell{
   position:sticky; left:0; z-index:3; background:#fafafa;
-  text-align:center; font-weight:bold; vertical-align:top;
-  padding:8px 1px 0; font-size:13px;
+  text-align:center; font-weight:bold; vertical-align:middle;
+  padding:4px 1px; font-size:13px;
 }
 td.daycell .d{color:#666; font-weight:normal; margin-top:2px; font-size:11px}
 tbody.today td.daycell{background:#fff8d6; color:#a4660a}
@@ -106,7 +109,7 @@ tr[data-slot] td.timecell{height:29px}
 td.empty:hover{background:#eef5ff}
 tr.extra td.empty:hover{background:#dde8f5}
 /* 病人資料字級（放大兩號；負責醫師列不受影響，另有自己的設定） */
-td.filled{cursor:pointer; vertical-align:top; -webkit-touch-callout:none; font-size:15px}
+td.filled{cursor:pointer; vertical-align:middle; -webkit-touch-callout:none; font-size:15px}
 
 /* 長按拖曳移動排程 */
 body.dragging-mode{user-select:none; -webkit-user-select:none; cursor:grabbing}
