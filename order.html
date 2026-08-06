@@ -1,0 +1,945 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>揪團點餐</title>
+<style>
+:root{
+  --primary:#e8590c; --primary-dark:#cf4e0a; --primary-bg:#fff1e8;
+  --ink:#2b2620; --sub:#8a7f72; --line:#e8e2d8; --bg:#f6f3ee; --card:#fff;
+  --green:#1b7a43; --red:#c62828;
+}
+*{box-sizing:border-box; -webkit-tap-highlight-color:transparent}
+html{height:100%}
+body{
+  margin:0; min-height:100%; background:var(--bg); color:var(--ink);
+  font-family:"Segoe UI","Microsoft JhengHei","PingFang TC",sans-serif; font-size:15px;
+}
+#wrap{max-width:640px; margin:0 auto; padding:10px 12px 90px}
+a{color:var(--primary)}
+.hidden{display:none !important}
+
+/* ---------- 頂列 ---------- */
+#topbar{display:flex; align-items:center; gap:8px; padding:10px 2px 6px}
+#topbar .brand{font-size:19px; font-weight:bold}
+#topbar .spacer{flex:1}
+#connStatus{font-size:12px; color:var(--sub); white-space:nowrap}
+#btnHome{border:none; background:none; font-size:15px; color:var(--primary); cursor:pointer; padding:4px 2px; font-family:inherit}
+
+/* ---------- 卡片 ---------- */
+.card{background:var(--card); border:1px solid var(--line); border-radius:14px; padding:14px; margin-bottom:12px; box-shadow:0 1px 2px rgba(60,40,10,.04)}
+.card h2{margin:0 0 10px; font-size:16px; display:flex; align-items:center; gap:6px}
+.card h2 .cnt{font-size:13px; color:var(--sub); font-weight:normal}
+.card h2 .right{margin-left:auto; font-size:13px; font-weight:normal}
+
+/* ---------- 表單 ---------- */
+label.f{display:block; font-size:13px; color:var(--sub); margin:10px 0 4px}
+label.f:first-child{margin-top:0}
+input[type=text],input[type=tel],input[type=number],input[type=datetime-local]{
+  width:100%; padding:10px; border:1px solid #cfc7ba; border-radius:10px;
+  font-size:16px; font-family:inherit; background:#fff; color:var(--ink);
+}
+input:focus{outline:2px solid var(--primary); outline-offset:0; border-color:var(--primary)}
+.row2{display:flex; gap:8px}
+.row2>*{flex:1}
+.row2 .narrow{flex:0 0 92px}
+
+button{font-family:inherit; cursor:pointer}
+.btn{
+  display:inline-flex; align-items:center; justify-content:center; gap:6px;
+  padding:11px 16px; border-radius:11px; border:1px solid var(--primary);
+  background:var(--primary); color:#fff; font-size:16px; font-weight:bold; width:100%;
+}
+.btn:active{background:var(--primary-dark)}
+.btn:disabled{opacity:.5}
+.btn.sec{background:#fff; color:var(--primary)}
+.btn.small{width:auto; padding:7px 12px; font-size:14px; font-weight:normal; border-radius:9px}
+.btn.ghost{background:#fff; color:#6b6156; border-color:#cfc7ba; font-weight:normal}
+.btn.danger{background:#fff; color:var(--red); border-color:var(--red); font-weight:normal}
+.chip{
+  border:1px solid var(--primary); color:var(--primary); background:#fff;
+  border-radius:999px; padding:4px 11px; font-size:13px; white-space:nowrap;
+}
+.chip:active{background:var(--primary-bg)}
+.chip:disabled{opacity:.4}
+.chip.gray{border-color:#cfc7ba; color:#6b6156}
+
+/* ---------- 倒數 ---------- */
+#deadlineCard{text-align:center; background:linear-gradient(180deg,#fff,#fffaf5)}
+#deadlineLine{font-size:14px; color:var(--sub)}
+#deadlineLine b{color:var(--ink); font-size:15px}
+#countdown{font-size:44px; font-weight:bold; letter-spacing:2px; font-variant-numeric:tabular-nums; margin:2px 0; color:var(--green)}
+#countdown.warn{color:var(--primary)}
+#countdown.over{color:var(--red); font-size:34px}
+#countdown.soon{animation:blink 1s step-start infinite}
+@keyframes blink{50%{opacity:.35}}
+#cdHint{font-size:13px; color:var(--sub)}
+
+/* ---------- 菜單圖片 ---------- */
+#menuStrip{display:flex; gap:8px; overflow-x:auto; padding-bottom:4px}
+#menuStrip img{height:150px; border-radius:10px; border:1px solid var(--line); cursor:zoom-in; flex:0 0 auto}
+#menuStrip .empty{color:var(--sub); font-size:14px; padding:16px 4px}
+
+/* 圖片放大檢視 */
+#imgViewer{position:fixed; inset:0; background:rgba(15,10,5,.93); z-index:60; overflow:auto; padding:44px 0 20px; text-align:center}
+#imgViewer img{width:98%; max-width:900px; margin:0 auto 12px; display:block; border-radius:6px}
+#imgViewer .close{position:fixed; top:10px; right:12px; font-size:22px; background:rgba(255,255,255,.15); color:#fff; border:none; border-radius:50%; width:40px; height:40px; z-index:61}
+
+/* ---------- 名字列 ---------- */
+#whoBar{display:flex; align-items:center; gap:8px; background:var(--primary-bg); border:1px solid #f3ceb2; border-radius:12px; padding:9px 12px; margin-bottom:12px; font-size:15px}
+#whoBar b{font-size:16px}
+#whoBar button{margin-left:auto}
+
+/* ---------- 訂單列表 ---------- */
+.person{border:1px solid var(--line); border-radius:12px; margin-bottom:10px; overflow:hidden}
+.person.me{border-color:var(--primary); box-shadow:0 0 0 1px var(--primary) inset}
+.person .phead{display:flex; align-items:center; gap:8px; padding:8px 11px; background:#faf7f2; border-bottom:1px solid var(--line)}
+.person.me .phead{background:var(--primary-bg)}
+.person .pname{font-weight:bold; font-size:15px}
+.person .psub{font-size:12px; color:var(--sub)}
+.person .phead .act{margin-left:auto; display:flex; gap:6px}
+.item{display:flex; align-items:flex-start; gap:8px; padding:9px 11px; border-bottom:1px solid #f1ece4}
+.item:last-child{border-bottom:none}
+.item .txt{flex:1; min-width:0}
+.item .iname{font-size:15px; word-break:break-all}
+.item .iname .qty{color:var(--primary); font-weight:bold; margin-left:4px}
+.item .inote{font-size:13px; color:#a3540f; word-break:break-all; margin-top:1px}
+.item .act{display:flex; gap:5px; flex-wrap:wrap; justify-content:flex-end; flex:0 0 auto; max-width:46%}
+.mini{border:1px solid #cfc7ba; background:#fff; color:#555; border-radius:8px; padding:4px 9px; font-size:13px; white-space:nowrap}
+.mini:active{background:#f2ede6}
+.mini.hot{border-color:var(--primary); color:var(--primary)}
+.mini:disabled{opacity:.4}
+#ordersEmpty{color:var(--sub); text-align:center; padding:14px 0}
+
+/* ---------- 彙總 ---------- */
+#sumList{margin:0; padding:0; list-style:none}
+#sumList li{padding:7px 2px; border-bottom:1px dashed var(--line); font-size:14.5px}
+#sumList li:last-child{border-bottom:none}
+#sumList .n{color:var(--primary); font-weight:bold}
+#sumList .who{color:var(--sub); font-size:13px}
+.btnrow{display:flex; gap:8px; margin-top:11px; flex-wrap:wrap}
+.btnrow .btn{flex:1; min-width:130px}
+
+/* ---------- 已截止橫幅 ---------- */
+#closedBanner{background:#fdecec; color:var(--red); border:1px solid #f3bcbc; border-radius:12px; padding:10px 14px; text-align:center; font-weight:bold; margin-bottom:12px}
+
+/* ---------- 首頁 ---------- */
+#menuPreview{display:flex; gap:8px; flex-wrap:wrap; margin-top:8px}
+#menuPreview .thumb{position:relative}
+#menuPreview img{height:86px; border-radius:8px; border:1px solid var(--line)}
+#menuPreview .del{position:absolute; top:-7px; right:-7px; width:24px; height:24px; border-radius:50%; border:none; background:#555; color:#fff; font-size:13px; line-height:1}
+#histList{margin:0; padding:0; list-style:none}
+#histList li{display:flex; align-items:center; gap:9px; padding:11px 4px; border-bottom:1px solid var(--line); cursor:pointer}
+#histList li:last-child{border-bottom:none}
+#histList .ht{flex:1; min-width:0}
+#histList .htitle{font-size:15px; font-weight:bold; overflow:hidden; text-overflow:ellipsis; white-space:nowrap}
+#histList .hsub{font-size:12.5px; color:var(--sub)}
+#histList .tag{font-size:12px; border-radius:999px; padding:3px 9px; white-space:nowrap}
+#histList .tag.open{background:#e6f4ea; color:var(--green)}
+#histList .tag.closed{background:#f4f0ea; color:var(--sub)}
+.note{font-size:12.5px; color:var(--sub); margin-top:8px; line-height:1.55}
+
+/* ---------- 分享 ---------- */
+#shareLink{font-size:13px; word-break:break-all; background:#faf7f2; border:1px dashed #cfc7ba; border-radius:9px; padding:9px; margin-bottom:9px; color:#555}
+
+/* ---------- 名字視窗 / 管理視窗 ---------- */
+.overlay{position:fixed; inset:0; background:rgba(30,20,10,.45); z-index:50; display:flex; align-items:center; justify-content:center; padding:18px}
+.dialog{background:#fff; border-radius:16px; padding:18px; width:100%; max-width:400px; max-height:88vh; overflow:auto}
+.dialog h3{margin:0 0 6px; font-size:17px}
+.dialog .sub{font-size:13px; color:var(--sub); margin-bottom:10px}
+.dialog .btnrow{margin-top:14px}
+
+/* ---------- toast ---------- */
+#toast{
+  position:fixed; left:50%; bottom:26px; transform:translateX(-50%);
+  background:#333; color:#fff; padding:10px 18px; border-radius:999px; font-size:14px;
+  opacity:0; transition:opacity .25s; z-index:99; pointer-events:none; max-width:88vw; text-align:center;
+}
+#toast.show{opacity:.95}
+
+/* 載入中 */
+#loading{text-align:center; color:var(--sub); padding:60px 0; font-size:15px}
+.spin{display:inline-block; width:18px; height:18px; border:3px solid #ddd; border-top-color:var(--primary); border-radius:50%; animation:sp 1s linear infinite; vertical-align:-4px; margin-right:8px}
+@keyframes sp{to{transform:rotate(360deg)}}
+</style>
+</head>
+<body>
+<div id="wrap">
+  <div id="topbar">
+    <span class="brand">🍱 揪團點餐</span>
+    <span class="spacer"></span>
+    <span id="connStatus"></span>
+    <button id="btnHome" class="hidden">← 首頁</button>
+  </div>
+
+  <div id="loading" class="hidden"><span class="spin"></span>載入中…</div>
+
+  <!-- ================= 首頁：發起訂餐 ================= -->
+  <div id="viewHome" class="hidden">
+    <div class="card">
+      <h2>🚀 發起訂餐</h2>
+      <label class="f">店名／標題 *</label>
+      <input type="text" id="cTitle" placeholder="例：健保飲料、明爐燒臘園" maxlength="40">
+      <label class="f">訂購電話（選填）</label>
+      <input type="tel" id="cPhone" placeholder="例：22731043" maxlength="20">
+      <label class="f">截止時間 *</label>
+      <input type="datetime-local" id="cDeadline">
+      <label class="f">菜單照片（可多張，選填）</label>
+      <input type="file" id="cImgs" accept="image/*" multiple class="hidden">
+      <button class="btn sec small" id="btnPickImg" type="button">📷 選擇照片</button>
+      <div id="menuPreview"></div>
+      <label class="f">你的名字（發起人）*</label>
+      <input type="text" id="cCreator" placeholder="例：明倩" maxlength="20">
+      <div style="margin-top:14px">
+        <button class="btn" id="btnCreate">建立訂餐 →</button>
+      </div>
+      <div class="note">建立後會產生專屬連結，把連結貼到 LINE 群組，大家點開就能自己點餐；截止時間到會自動停止收單。</div>
+    </div>
+
+    <div class="card" id="histCard">
+      <h2>🕘 最近的訂餐 <button class="chip gray right" id="btnClearHist">清除</button></h2>
+      <ul id="histList"></ul>
+    </div>
+  </div>
+
+  <!-- ================= 訂餐頁 ================= -->
+  <div id="viewEvent" class="hidden">
+    <div class="card" id="deadlineCard">
+      <div style="font-size:19px; font-weight:bold; margin-bottom:2px"><span id="eTitle"></span></div>
+      <div id="ePhone" class="hidden" style="font-size:14px; margin-bottom:4px">☎ <a id="ePhoneLink" href=""></a></div>
+      <div id="deadlineLine"></div>
+      <div id="countdown">--:--:--</div>
+      <div id="cdHint"></div>
+    </div>
+
+    <div id="closedBanner" class="hidden">⛔ 已截止收單</div>
+
+    <div class="card" id="menuCard">
+      <h2>📋 菜單</h2>
+      <div id="menuStrip"><span class="empty">（發起人未上傳菜單照片）</span></div>
+    </div>
+
+    <div id="whoBar">👤 我是：<b id="whoName">（未設定）</b><button class="chip" id="btnWho">更改</button></div>
+
+    <div class="card" id="addCard">
+      <h2 id="addTitle">➕ 我要點餐</h2>
+      <label class="f">品項 *</label>
+      <input type="text" id="aItem" placeholder="例：碳焙珍波晶凍奶（換鮮奶）" maxlength="60">
+      <label class="f">備註（甜度冰塊、加料、不要飯…）</label>
+      <input type="text" id="aNote" placeholder="例：一分糖去冰" maxlength="60">
+      <div class="row2" style="margin-top:2px">
+        <div class="narrow">
+          <label class="f">數量</label>
+          <input type="number" id="aQty" value="1" min="1" max="99" inputmode="numeric">
+        </div>
+        <div>
+          <label class="f">掛名（可代別人點）</label>
+          <input type="text" id="aName" maxlength="20">
+        </div>
+      </div>
+      <div style="margin-top:13px" class="row2">
+        <button class="btn" id="btnAdd">加入訂單</button>
+        <button class="btn ghost hidden" id="btnCancelEdit" style="flex:0 0 96px">取消</button>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>🧾 目前訂單 <span class="cnt" id="ordCnt"></span></h2>
+      <div id="ordersEmpty">還沒有人點餐，搶頭香！</div>
+      <div id="ordersList"></div>
+    </div>
+
+    <div class="card">
+      <h2>📊 彙總（打電話用）</h2>
+      <ul id="sumList"></ul>
+      <div class="btnrow">
+        <button class="btn sec" id="btnCopySum">複製彙總文字</button>
+        <button class="btn sec" id="btnCopyChain">複製接龍文字</button>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>🔗 分享給同事</h2>
+      <div id="shareLink"></div>
+      <div class="btnrow">
+        <button class="btn sec" id="btnCopyLink">複製連結</button>
+        <button class="btn sec" id="btnLine">傳到 LINE</button>
+      </div>
+      <div class="btnrow hidden" id="adminRow">
+        <button class="btn ghost" id="btnAdmin">⚙ 管理（發起人）</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- 名字輸入視窗 -->
+<div class="overlay hidden" id="nameOverlay">
+  <div class="dialog">
+    <h3>你的名字是？</h3>
+    <div class="sub">名字會顯示在訂單上，讓發起人知道是誰點的（只需輸入一次，之後會記住）。</div>
+    <input type="text" id="nameInput" placeholder="例：小明" maxlength="20">
+    <div class="btnrow">
+      <button class="btn" id="nameOk">確定</button>
+      <button class="btn ghost" id="nameSkip" style="flex:0 0 100px">先看看</button>
+    </div>
+  </div>
+</div>
+
+<!-- 管理視窗（發起人） -->
+<div class="overlay hidden" id="adminOverlay">
+  <div class="dialog">
+    <h3>⚙ 管理訂餐</h3>
+    <label class="f">店名／標題</label>
+    <input type="text" id="mTitle" maxlength="40">
+    <label class="f">訂購電話</label>
+    <input type="tel" id="mPhone" maxlength="20">
+    <label class="f">截止時間</label>
+    <input type="datetime-local" id="mDeadline">
+    <div class="btnrow">
+      <button class="btn" id="mSave">儲存</button>
+      <button class="btn ghost" id="mClose" style="flex:0 0 88px">關閉</button>
+    </div>
+    <div class="btnrow">
+      <button class="btn sec" id="mCloseNow">⏰ 立即截單</button>
+      <button class="btn sec" id="mExtend">+30 分鐘</button>
+    </div>
+    <div class="btnrow">
+      <button class="btn danger" id="mDelete">🗑 刪除此訂餐（全部資料）</button>
+    </div>
+  </div>
+</div>
+
+<!-- 圖片放大 -->
+<div id="imgViewer" class="hidden">
+  <button class="close" id="imgViewerClose">✕</button>
+  <div id="imgViewerBody"></div>
+</div>
+
+<div id="toast"></div>
+
+<script>
+'use strict';
+/* =====================================================================
+   揪團點餐 — 取代 LINE 群組「複製貼上接龍」的點餐方式
+   與心導管排程系統共用同一個 Firebase 專案：
+   資料放在 teams/{12碼金鑰}/meta/food（排程系統用 meta/settings，互不干擾）
+   ===================================================================== */
+const FIREBASE_CONFIG = {
+  apiKey: 'AIzaSyDfemQi7bwLvkLvN7x42mGwKIKcMBOIVr0',
+  authDomain: 'cathlab-sched-rhsbp.firebaseapp.com',
+  projectId: 'cathlab-sched-rhsbp',
+  storageBucket: 'cathlab-sched-rhsbp.firebasestorage.app',
+  messagingSenderId: '1203251370',
+  appId: '1:1203251370:web:f256ed289dcf5d132e88d3',
+};
+
+const $ = s => document.querySelector(s);
+function esc(s){ return String(s == null ? '' : s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+function toast(msg){
+  const t = $('#toast'); t.textContent = msg; t.classList.add('show');
+  clearTimeout(toast._tm); toast._tm = setTimeout(() => t.classList.remove('show'), 2400);
+}
+function pad2(n){ return String(n).padStart(2, '0'); }
+function fmtDT(iso){
+  const d = new Date(iso);
+  const wd = '日一二三四五六'[d.getDay()];
+  return (d.getMonth()+1) + '/' + d.getDate() + '（' + wd + '）' + pad2(d.getHours()) + ':' + pad2(d.getMinutes());
+}
+function toLocalInput(iso){
+  const d = new Date(iso);
+  return d.getFullYear() + '-' + pad2(d.getMonth()+1) + '-' + pad2(d.getDate()) + 'T' + pad2(d.getHours()) + ':' + pad2(d.getMinutes());
+}
+const KEYCHARS = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789';
+function randKey(len){
+  const a = new Uint32Array(len);
+  crypto.getRandomValues(a);
+  return [...a].map(x => KEYCHARS[x % KEYCHARS.length]).join('');
+}
+function newId(){ return Date.now().toString(36) + '-' + randKey(4); }
+
+/* ---------- 本機儲存 ---------- */
+function lsGet(k, dv){ try{ const v = localStorage.getItem(k); return v === null ? dv : v; }catch(e){ return dv; } }
+function lsSet(k, v){ try{ localStorage.setItem(k, v); }catch(e){} }
+let myName = lsGet('foodorder-name', '');
+let cid = lsGet('foodorder-cid', '');
+if(!cid){ cid = randKey(10); lsSet('foodorder-cid', cid); }
+
+/* 最近的訂餐（首頁清單） */
+function getHistory(){ try{ return JSON.parse(lsGet('foodorder-history', '[]')) || []; }catch(e){ return []; } }
+function pushHistory(entry){
+  const h = getHistory().filter(x => x.k !== entry.k);
+  h.unshift(entry);
+  lsSet('foodorder-history', JSON.stringify(h.slice(0, 20)));
+}
+
+/* ---------- Firebase ---------- */
+let fb = null;   /* {fsM, db} */
+function loadFirebase(){
+  if(!loadFirebase._p){
+    loadFirebase._p = Promise.all([
+      import('https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js'),
+      import('https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js'),
+    ]).then(([appM, fsM]) => {
+      let app; try{ app = appM.getApp(); }catch(e){ app = appM.initializeApp(FIREBASE_CONFIG); }
+      fb = {fsM, db: fsM.getFirestore(app)};
+      return fb;
+    }).catch(e => { loadFirebase._p = null; throw e; });
+  }
+  return loadFirebase._p;
+}
+function setConn(txt){ $('#connStatus').textContent = txt || ''; }
+
+/* ---------- 目前開啟的訂餐 ---------- */
+let ev = null;   /* {key, meta, orders:[], unsubs:[], imgsLoaded} */
+let cdTimer = null;
+function isAdmin(){ return !!(ev && ev.meta && ev.meta.adminToken && lsGet('foodorder-admin-' + ev.key, '') === ev.meta.adminToken); }
+function isClosed(){ return !!(ev && ev.meta && Date.now() >= new Date(ev.meta.deadline).getTime()); }
+
+/* ===================================================================
+   路由：?e=金鑰 → 訂餐頁；否則首頁
+   =================================================================== */
+function boot(){
+  const key = new URLSearchParams(location.search).get('e');
+  if(key && /^[A-Za-z0-9]{12}$/.test(key)) enterEvent(key);
+  else showHome();
+}
+$('#btnHome').addEventListener('click', () => { location.href = location.pathname; });
+
+function showView(id){
+  ['#loading','#viewHome','#viewEvent'].forEach(s => $(s).classList.add('hidden'));
+  $(id).classList.remove('hidden');
+  $('#btnHome').classList.toggle('hidden', id !== '#viewEvent');
+}
+
+/* ===================================================================
+   首頁：發起訂餐
+   =================================================================== */
+let pickedImgs = [];   /* [{dataUrl}] 已壓縮 */
+
+function showHome(){
+  showView('#viewHome');
+  /* 截止時間預設：現在 +90 分鐘，往後湊到整點或半點（9:26 → 11:00） */
+  const d = new Date(Date.now() + 90 * 60000);
+  d.setSeconds(0, 0);
+  const m = d.getMinutes();
+  if(m % 30) d.setMinutes(m + (30 - m % 30));
+  $('#cDeadline').value = toLocalInput(d.toISOString());
+  $('#cCreator').value = myName;
+  renderHistory();
+}
+
+function renderHistory(){
+  const h = getHistory();
+  $('#histCard').classList.toggle('hidden', !h.length);
+  $('#histList').innerHTML = h.map(x => {
+    const closed = Date.now() >= new Date(x.d).getTime();
+    return '<li data-k="' + esc(x.k) + '">' +
+      '<div class="ht"><div class="htitle">' + esc(x.t) + '</div>' +
+      '<div class="hsub">' + esc(fmtDT(x.d)) + ' 結單</div></div>' +
+      '<span class="tag ' + (closed ? 'closed">已截止' : 'open">開放中') + '</span></li>';
+  }).join('');
+  [...$('#histList').children].forEach(li => li.addEventListener('click', () => {
+    location.href = location.pathname + '?e=' + li.dataset.k;
+  }));
+}
+$('#btnClearHist').addEventListener('click', () => {
+  if(!confirm('清除最近的訂餐紀錄？（不會刪除雲端訂餐，只清除這支手機上的捷徑）')) return;
+  lsSet('foodorder-history', '[]'); renderHistory();
+});
+
+/* --- 菜單照片選擇與壓縮（Firestore 單一文件上限 1MB，需先縮圖再分塊儲存） --- */
+$('#btnPickImg').addEventListener('click', () => $('#cImgs').click());
+$('#cImgs').addEventListener('change', async e => {
+  const files = [...e.target.files];
+  e.target.value = '';
+  if(!files.length) return;
+  $('#btnPickImg').disabled = true;
+  $('#btnPickImg').textContent = '照片處理中…';
+  try{
+    for(const f of files){
+      if(pickedImgs.length >= 6){ toast('最多 6 張照片'); break; }
+      pickedImgs.push({dataUrl: await compressImage(f)});
+    }
+    renderMenuPreview();
+  }catch(err){ toast('照片讀取失敗：' + err.message); }
+  $('#btnPickImg').disabled = false;
+  $('#btnPickImg').textContent = '📷 選擇照片';
+});
+function renderMenuPreview(){
+  $('#menuPreview').innerHTML = pickedImgs.map((p, i) =>
+    '<div class="thumb"><img src="' + p.dataUrl + '"><button class="del" data-i="' + i + '">✕</button></div>').join('');
+  [...$('#menuPreview').querySelectorAll('.del')].forEach(b => b.addEventListener('click', () => {
+    pickedImgs.splice(+b.dataset.i, 1); renderMenuPreview();
+  }));
+}
+function compressImage(file){
+  return new Promise((resolve, reject) => {
+    const url = URL.createObjectURL(file);
+    const img = new Image();
+    img.onload = () => {
+      URL.revokeObjectURL(url);
+      /* 逐步降低尺寸與品質，直到 base64 小於 ~900KB（約 1〜2 塊文件） */
+      const tries = [[1600,.8],[1400,.72],[1200,.65],[1000,.6],[800,.55],[640,.5]];
+      let out = null;
+      for(const [side, q] of tries){
+        const sc = Math.min(1, side / Math.max(img.width, img.height));
+        const c = document.createElement('canvas');
+        c.width = Math.max(1, Math.round(img.width * sc));
+        c.height = Math.max(1, Math.round(img.height * sc));
+        c.getContext('2d').drawImage(img, 0, 0, c.width, c.height);
+        out = c.toDataURL('image/jpeg', q);
+        if(out.length <= 900000) break;
+      }
+      resolve(out);
+    };
+    img.onerror = () => { URL.revokeObjectURL(url); reject(new Error('無法讀取圖片')); };
+    img.src = url;
+  });
+}
+
+/* --- 建立訂餐 --- */
+$('#btnCreate').addEventListener('click', async () => {
+  const title = $('#cTitle').value.trim();
+  const phone = $('#cPhone').value.trim();
+  const dlVal = $('#cDeadline').value;
+  const creator = $('#cCreator').value.trim();
+  if(!title){ toast('請輸入店名／標題'); $('#cTitle').focus(); return; }
+  if(!dlVal){ toast('請設定截止時間'); return; }
+  const deadline = new Date(dlVal);
+  if(!(deadline > new Date())){ toast('截止時間需晚於現在'); return; }
+  if(!creator){ toast('請輸入你的名字'); $('#cCreator').focus(); return; }
+  myName = creator; lsSet('foodorder-name', myName);
+
+  const btn = $('#btnCreate');
+  btn.disabled = true; btn.textContent = '建立中…';
+  try{
+    const {fsM, db} = await loadFirebase();
+    const key = randKey(12);          /* 安全規則要求金鑰長度必須是 12 碼 */
+    const adminToken = randKey(16);
+    /* 圖片分塊上傳（每塊 ≤ 700K 字元），最後才寫 meta，避免出現半成品 */
+    const images = [];
+    for(let gi = 0; gi < pickedImgs.length; gi++){
+      btn.textContent = '上傳照片 ' + (gi+1) + '/' + pickedImgs.length + '…';
+      const data = pickedImgs[gi].dataUrl;
+      const CHUNK = 700000;
+      const n = Math.ceil(data.length / CHUNK);
+      const gid = 'g' + gi;
+      for(let i = 0; i < n; i++){
+        await fsM.setDoc(fsM.doc(db, 'teams', key, 'images', gid + '-' + i),
+          {g: gid, i, d: data.slice(i * CHUNK, (i+1) * CHUNK)});
+      }
+      images.push({id: gid, n});
+    }
+    btn.textContent = '建立中…';
+    await fsM.setDoc(fsM.doc(db, 'teams', key, 'meta', 'food'), {
+      app: 'food-order', version: 1,
+      title, phone,
+      deadline: deadline.toISOString(),
+      creator, createdAt: new Date().toISOString(),
+      adminToken, images,
+    });
+    lsSet('foodorder-admin-' + key, adminToken);
+    pushHistory({k: key, t: title, d: deadline.toISOString()});
+    location.replace(location.pathname + '?e=' + key);
+  }catch(e){
+    toast('建立失敗：' + e.message);
+    btn.disabled = false; btn.textContent = '建立訂餐 →';
+  }
+});
+
+/* ===================================================================
+   訂餐頁
+   =================================================================== */
+async function enterEvent(key){
+  showView('#loading');
+  try{
+    const {fsM, db} = await loadFirebase();
+    const metaRef = fsM.doc(db, 'teams', key, 'meta', 'food');
+    const snap = await fsM.getDoc(metaRef);
+    if(!snap.exists() || snap.data().app !== 'food-order'){
+      showView('#viewHome'); showHome();
+      toast('查無此訂餐，可能已被發起人刪除');
+      return;
+    }
+    ev = {key, meta: snap.data(), orders: [], unsubs: [], imgsLoaded: false};
+    pushHistory({k: key, t: ev.meta.title, d: ev.meta.deadline});
+    showView('#viewEvent');
+    renderMeta(); renderWho(); renderOrders(); startCountdown();
+    if(!myName) openNameDialog(false);
+
+    /* 監聽 meta（截止時間可能被發起人改動）與訂單（即時同步） */
+    ev.unsubs.push(fsM.onSnapshot(metaRef, s => {
+      if(!s.exists()){ toast('此訂餐已被刪除'); location.href = location.pathname; return; }
+      ev.meta = s.data();
+      renderMeta(); tickCountdown();
+      setConn('☁ 已同步');
+    }, () => { setConn('⚠ 連線中斷'); }));
+    ev.unsubs.push(fsM.onSnapshot(fsM.collection(db, 'teams', key, 'orders'), s => {
+      const arr = [];
+      s.forEach(d => arr.push(d.data()));
+      arr.sort((a, b) => (a.ts || 0) - (b.ts || 0));
+      ev.orders = arr;
+      renderOrders();
+      setConn('☁ 已同步');
+    }, () => { setConn('⚠ 連線中斷'); }));
+    loadMenuImages();
+  }catch(e){
+    showView('#viewHome'); showHome();
+    toast('連線失敗：' + e.message);
+  }
+}
+
+function renderMeta(){
+  const m = ev.meta;
+  document.title = m.title + ' - 揪團點餐';
+  $('#eTitle').textContent = m.title;
+  $('#ePhone').classList.toggle('hidden', !m.phone);
+  if(m.phone){ $('#ePhoneLink').textContent = m.phone; $('#ePhoneLink').href = 'tel:' + m.phone; }
+  $('#deadlineLine').innerHTML = '<b>' + esc(fmtDT(m.deadline)) + '</b> 結單 ・ 發起人：' + esc(m.creator || '?');
+  const url = shareUrl();
+  $('#shareLink').textContent = url;
+  $('#adminRow').classList.toggle('hidden', !isAdmin());
+}
+function shareUrl(){ return location.origin + location.pathname + '?e=' + ev.key; }
+
+/* --- 倒數計時 --- */
+function startCountdown(){
+  clearInterval(cdTimer);
+  cdTimer = setInterval(tickCountdown, 500);
+  tickCountdown();
+}
+function tickCountdown(){
+  if(!ev) return;
+  const cd = $('#countdown');
+  const remain = new Date(ev.meta.deadline).getTime() - Date.now();
+  const closed = remain <= 0;
+  if(closed){
+    cd.textContent = '已截止收單';
+    cd.className = 'over';
+    $('#cdHint').textContent = '結單時間 ' + fmtDT(ev.meta.deadline);
+  }else{
+    const s = Math.floor(remain / 1000);
+    const d = Math.floor(s / 86400);
+    const t = pad2(Math.floor(s % 86400 / 3600)) + ':' + pad2(Math.floor(s % 3600 / 60)) + ':' + pad2(s % 60);
+    cd.textContent = (d ? d + '天 ' : '') + t;
+    cd.className = remain < 10 * 60000 ? 'warn soon' : (remain < 60 * 60000 ? 'warn' : '');
+    $('#cdHint').textContent = '距離結單還有';
+  }
+  /* 跨越截止瞬間 → 鎖定輸入介面 */
+  if(tickCountdown._closed !== closed){
+    tickCountdown._closed = closed;
+    $('#closedBanner').classList.toggle('hidden', !closed);
+    $('#addCard').classList.toggle('hidden', closed);
+    renderOrders();
+  }
+}
+
+/* --- 菜單圖片 --- */
+async function loadMenuImages(){
+  const m = ev.meta;
+  if(!m.images || !m.images.length || ev.imgsLoaded) return;
+  try{
+    const {fsM, db} = fb;
+    const s = await fsM.getDocs(fsM.collection(db, 'teams', ev.key, 'images'));
+    const chunks = {};
+    s.forEach(d => { const v = d.data(); (chunks[v.g] = chunks[v.g] || [])[v.i] = v.d; });
+    const urls = m.images.map(im => (chunks[im.id] || []).join('')).filter(u => u.startsWith('data:'));
+    if(urls.length){
+      ev.imgsLoaded = true;
+      ev.imgUrls = urls;
+      $('#menuStrip').innerHTML = urls.map((u, i) => '<img src="' + u + '" data-i="' + i + '" alt="菜單 ' + (i+1) + '">').join('');
+      [...$('#menuStrip').children].forEach(img => img.addEventListener('click', openImgViewer));
+    }
+  }catch(e){ /* 菜單載入失敗不影響點餐 */ }
+}
+function openImgViewer(){
+  $('#imgViewerBody').innerHTML = (ev.imgUrls || []).map(u => '<img src="' + u + '">').join('');
+  $('#imgViewer').classList.remove('hidden');
+}
+$('#imgViewerClose').addEventListener('click', () => $('#imgViewer').classList.add('hidden'));
+
+/* --- 名字 --- */
+function renderWho(){
+  $('#whoName').textContent = myName || '（未設定）';
+  $('#aName').value = myName;
+}
+function openNameDialog(forced){
+  $('#nameInput').value = myName;
+  $('#nameSkip').classList.toggle('hidden', !!forced);
+  $('#nameOverlay').classList.remove('hidden');
+  setTimeout(() => $('#nameInput').focus(), 50);
+}
+$('#btnWho').addEventListener('click', () => openNameDialog(false));
+$('#nameOk').addEventListener('click', () => {
+  const v = $('#nameInput').value.trim();
+  if(!v){ toast('請輸入名字'); return; }
+  myName = v; lsSet('foodorder-name', v);
+  $('#nameOverlay').classList.add('hidden');
+  renderWho(); renderOrders();
+});
+$('#nameInput').addEventListener('keydown', e => { if(e.key === 'Enter') $('#nameOk').click(); });
+$('#nameSkip').addEventListener('click', () => $('#nameOverlay').classList.add('hidden'));
+
+/* --- 新增／編輯品項 --- */
+let editingId = null;
+function requireOpen(){
+  if(isClosed()){ toast('已截止收單囉'); return false; }
+  return true;
+}
+function requireName(){
+  if(myName) return true;
+  openNameDialog(false);
+  return false;
+}
+async function writeOrder(rec){
+  const {fsM, db} = fb;
+  await fsM.setDoc(fsM.doc(db, 'teams', ev.key, 'orders', rec.id), rec);
+}
+$('#btnAdd').addEventListener('click', async () => {
+  if(!requireOpen()) return;
+  const item = $('#aItem').value.trim();
+  const note = $('#aNote').value.trim();
+  const qty = Math.max(1, Math.min(99, +$('#aQty').value || 1));
+  const name = $('#aName').value.trim() || myName;
+  if(!item){ toast('請輸入品項'); $('#aItem').focus(); return; }
+  if(!name){ if(!requireName()) return; }
+  const btn = $('#btnAdd');
+  btn.disabled = true;
+  try{
+    const old = editingId && ev.orders.find(o => o.id === editingId);
+    await writeOrder({
+      id: old ? old.id : newId(),
+      name, item, note, qty,
+      ownerId: old ? old.ownerId : cid,
+      ts: old ? old.ts : Date.now(),
+    });
+    toast(old ? '已更新' : '已加入：' + item);
+    cancelEdit();
+  }catch(e){ toast('寫入失敗：' + e.message); }
+  btn.disabled = false;
+});
+function cancelEdit(){
+  editingId = null;
+  $('#aItem').value = ''; $('#aNote').value = ''; $('#aQty').value = 1; $('#aName').value = myName;
+  $('#addTitle').textContent = '➕ 我要點餐';
+  $('#btnAdd').textContent = '加入訂單';
+  $('#btnCancelEdit').classList.add('hidden');
+}
+$('#btnCancelEdit').addEventListener('click', cancelEdit);
+function startEdit(o){
+  editingId = o.id;
+  $('#aItem').value = o.item; $('#aNote').value = o.note || ''; $('#aQty').value = o.qty || 1; $('#aName').value = o.name;
+  $('#addTitle').textContent = '✏ 編輯品項';
+  $('#btnAdd').textContent = '更新';
+  $('#btnCancelEdit').classList.remove('hidden');
+  $('#addCard').scrollIntoView({behavior: 'smooth', block: 'center'});
+  $('#aItem').focus();
+}
+
+/* --- 訂單列表 --- */
+function canTouch(o){ return o.ownerId === cid || o.name === myName || isAdmin(); }
+function renderOrders(){
+  const list = ev ? ev.orders : [];
+  const totalQty = list.reduce((s, o) => s + (o.qty || 1), 0);
+  const byName = new Map();
+  list.forEach(o => { if(!byName.has(o.name)) byName.set(o.name, []); byName.get(o.name).push(o); });
+  $('#ordCnt').textContent = list.length ? totalQty + ' 份 ・ ' + byName.size + ' 人' : '';
+  $('#ordersEmpty').classList.toggle('hidden', !!list.length);
+  const closed = isClosed();
+
+  let html = '';
+  byName.forEach((items, name) => {
+    const me = name === myName;
+    const n = items.reduce((s, o) => s + (o.qty || 1), 0);
+    html += '<div class="person' + (me ? ' me' : '') + '">' +
+      '<div class="phead"><span class="pname">' + esc(name) + (me ? '（我）' : '') + '</span>' +
+      '<span class="psub">' + n + ' 份</span><span class="act">' +
+      (!me && !closed ? '<button class="chip" data-act="copyall" data-name="' + esc(name) + '">跟他點一樣</button>' : '') +
+      '</span></div>';
+    items.forEach(o => {
+      html += '<div class="item"><div class="txt">' +
+        '<div class="iname">' + esc(o.item) + ((o.qty || 1) > 1 ? '<span class="qty">×' + o.qty + '</span>' : '') + '</div>' +
+        (o.note ? '<div class="inote">📝 ' + esc(o.note) + '</div>' : '') +
+        '</div><div class="act">' +
+        (!closed && !me ? '<button class="mini hot" data-act="same" data-id="' + o.id + '">+1</button>' +
+                          '<button class="mini" data-act="samenote" data-id="' + o.id + '">+1 改備註</button>' : '') +
+        (!closed && canTouch(o) ? '<button class="mini" data-act="edit" data-id="' + o.id + '">編輯</button>' +
+                                  '<button class="mini" data-act="del" data-id="' + o.id + '">刪除</button>' : '') +
+        '</div></div>';
+    });
+    html += '</div>';
+  });
+  $('#ordersList').innerHTML = html;
+  renderSummary();
+}
+$('#ordersList').addEventListener('click', async e => {
+  const btn = e.target.closest('button[data-act]');
+  if(!btn || !requireOpen()) return;
+  const act = btn.dataset.act;
+  if(act === 'copyall'){
+    if(!requireName()) return;
+    const name = btn.dataset.name;
+    const items = ev.orders.filter(o => o.name === name);
+    if(!items.length) return;
+    const desc = items.map(o => o.item + (o.note ? '（' + o.note + '）' : '') + ((o.qty||1) > 1 ? '×' + o.qty : '')).join('、');
+    if(!confirm('跟「' + name + '」點一樣？\n\n' + desc + '\n\n共 ' + items.length + ' 項，會加到「' + myName + '」名下。')) return;
+    btn.disabled = true;
+    try{
+      for(const o of items){
+        await writeOrder({id: newId(), name: myName, item: o.item, note: o.note || '', qty: o.qty || 1, ownerId: cid, ts: Date.now(), from: name});
+      }
+      toast('已跟單 ' + items.length + ' 項');
+    }catch(err){ toast('寫入失敗：' + err.message); }
+    return;
+  }
+  const o = ev.orders.find(x => x.id === btn.dataset.id);
+  if(!o) return;
+  if(act === 'same'){
+    if(!requireName()) return;
+    btn.disabled = true;
+    try{
+      await writeOrder({id: newId(), name: myName, item: o.item, note: o.note || '', qty: 1, ownerId: cid, ts: Date.now(), from: o.name});
+      toast('已加入：' + o.item + (o.note ? '（' + o.note + '）' : ''));
+    }catch(err){ toast('寫入失敗：' + err.message); btn.disabled = false; }
+  }else if(act === 'samenote'){
+    if(!requireName()) return;
+    editingId = null;
+    $('#aItem').value = o.item; $('#aNote').value = o.note || ''; $('#aQty').value = 1; $('#aName').value = myName;
+    $('#addTitle').textContent = '➕ 我要點餐';
+    $('#btnAdd').textContent = '加入訂單';
+    $('#btnCancelEdit').classList.add('hidden');
+    $('#addCard').scrollIntoView({behavior: 'smooth', block: 'center'});
+    $('#aNote').focus();
+    toast('已帶入「' + o.item + '」，請修改備註後按加入');
+  }else if(act === 'edit'){
+    startEdit(o);
+  }else if(act === 'del'){
+    if(!confirm('刪除「' + o.item + '」（' + o.name + '）？')) return;
+    try{
+      const {fsM, db} = fb;
+      await fsM.deleteDoc(fsM.doc(db, 'teams', ev.key, 'orders', o.id));
+      toast('已刪除');
+    }catch(err){ toast('刪除失敗：' + err.message); }
+  }
+});
+
+/* --- 彙總 --- */
+function summaryGroups(){
+  const g = new Map();   /* item\0note → {item, note, qty, names:[]} */
+  ev.orders.forEach(o => {
+    const k = o.item + ' ' + (o.note || '');
+    if(!g.has(k)) g.set(k, {item: o.item, note: o.note || '', qty: 0, names: []});
+    const e = g.get(k);
+    e.qty += o.qty || 1;
+    e.names.push(o.name + ((o.qty||1) > 1 ? '×' + o.qty : ''));
+  });
+  return [...g.values()].sort((a, b) => b.qty - a.qty);
+}
+function renderSummary(){
+  const gs = summaryGroups();
+  $('#sumList').innerHTML = gs.length
+    ? gs.map(g => '<li>' + esc(g.item) + (g.note ? '（' + esc(g.note) + '）' : '') +
+        ' <span class="n">×' + g.qty + '</span><br><span class="who">' + esc(g.names.join('、')) + '</span></li>').join('')
+    : '<li style="color:var(--sub)">（尚無訂單）</li>';
+}
+function copyText(txt, okMsg){
+  const done = () => toast(okMsg || '已複製');
+  if(navigator.clipboard && navigator.clipboard.writeText){
+    navigator.clipboard.writeText(txt).then(done).catch(() => fallbackCopy(txt, done));
+  }else fallbackCopy(txt, done);
+}
+function fallbackCopy(txt, done){
+  const ta = document.createElement('textarea');
+  ta.value = txt; ta.style.position = 'fixed'; ta.style.opacity = '0';
+  document.body.appendChild(ta); ta.select();
+  try{ document.execCommand('copy'); done(); }catch(e){ toast('複製失敗，請長按選取'); }
+  ta.remove();
+}
+$('#btnCopySum').addEventListener('click', () => {
+  const m = ev.meta;
+  const total = ev.orders.reduce((s, o) => s + (o.qty || 1), 0);
+  const lines = ['【' + m.title + '】共 ' + total + ' 份' + (m.phone ? '　☎ ' + m.phone : '')];
+  summaryGroups().forEach(g => {
+    lines.push(g.item + (g.note ? '（' + g.note + '）' : '') + ' ×' + g.qty + '（' + g.names.join('、') + '）');
+  });
+  copyText(lines.join('\n'), '已複製彙總，可直接傳給店家');
+});
+$('#btnCopyChain').addEventListener('click', () => {
+  const m = ev.meta;
+  const lines = ['【' + m.title + '】' + fmtDT(m.deadline) + ' 結單' + (m.phone ? ' ' + m.phone : ''), '點餐連結：' + shareUrl()];
+  ev.orders.forEach(o => {
+    lines.push(o.item + (o.note ? '（' + o.note + '）' : '') + ((o.qty||1) > 1 ? ' ×' + o.qty : '') + ' ' + o.name);
+  });
+  copyText(lines.join('\n'), '已複製接龍文字');
+});
+
+/* --- 分享 --- */
+$('#btnCopyLink').addEventListener('click', () => {
+  const m = ev.meta;
+  copyText('【' + m.title + '】' + fmtDT(m.deadline) + ' 結單，點連結自己點餐：\n' + shareUrl(), '已複製，貼到 LINE 群組吧');
+});
+$('#btnLine').addEventListener('click', () => {
+  const m = ev.meta;
+  const txt = '【' + m.title + '】' + fmtDT(m.deadline) + ' 結單，點連結自己點餐：\n' + shareUrl();
+  window.open('https://line.me/R/share?text=' + encodeURIComponent(txt), '_blank');
+});
+
+/* --- 管理（發起人） --- */
+$('#btnAdmin').addEventListener('click', () => {
+  const m = ev.meta;
+  $('#mTitle').value = m.title; $('#mPhone').value = m.phone || '';
+  $('#mDeadline').value = toLocalInput(m.deadline);
+  $('#adminOverlay').classList.remove('hidden');
+});
+$('#mClose').addEventListener('click', () => $('#adminOverlay').classList.add('hidden'));
+async function adminUpdate(patch, okMsg){
+  try{
+    const {fsM, db} = fb;
+    await fsM.updateDoc(fsM.doc(db, 'teams', ev.key, 'meta', 'food'), patch);
+    toast(okMsg || '已更新');
+    return true;
+  }catch(e){ toast('更新失敗：' + e.message); return false; }
+}
+$('#mSave').addEventListener('click', async () => {
+  const title = $('#mTitle').value.trim();
+  const dl = $('#mDeadline').value;
+  if(!title){ toast('標題不可空白'); return; }
+  if(!dl){ toast('請設定截止時間'); return; }
+  if(await adminUpdate({title, phone: $('#mPhone').value.trim(), deadline: new Date(dl).toISOString()}, '已儲存')){
+    pushHistory({k: ev.key, t: title, d: new Date(dl).toISOString()});
+    $('#adminOverlay').classList.add('hidden');
+  }
+});
+$('#mCloseNow').addEventListener('click', async () => {
+  if(!confirm('立即截單？大家將無法再點餐。')) return;
+  if(await adminUpdate({deadline: new Date().toISOString()}, '已截單')) $('#adminOverlay').classList.add('hidden');
+});
+$('#mExtend').addEventListener('click', () => {
+  const base = Math.max(Date.now(), new Date($('#mDeadline').value || ev.meta.deadline).getTime());
+  $('#mDeadline').value = toLocalInput(new Date(base + 30 * 60000).toISOString());
+  toast('已 +30 分鐘，記得按儲存');
+});
+$('#mDelete').addEventListener('click', async () => {
+  if(!confirm('確定刪除此訂餐？所有訂單與菜單照片都會消失，無法復原！')) return;
+  if(!confirm('真的要刪除「' + ev.meta.title + '」？')) return;
+  try{
+    const {fsM, db} = fb;
+    ev.unsubs.forEach(u => { try{ u(); }catch(e){} });
+    for(const coll of ['orders', 'images']){
+      const s = await fsM.getDocs(fsM.collection(db, 'teams', ev.key, coll));
+      const b = fsM.writeBatch(db);
+      s.forEach(d => b.delete(d.ref));
+      await b.commit();
+    }
+    await fsM.deleteDoc(fsM.doc(db, 'teams', ev.key, 'meta', 'food'));
+    lsSet('foodorder-history', JSON.stringify(getHistory().filter(x => x.k !== ev.key)));
+    toast('已刪除');
+    location.href = location.pathname;
+  }catch(e){ toast('刪除失敗：' + e.message); }
+});
+
+boot();
+</script>
+</body>
+</html>
