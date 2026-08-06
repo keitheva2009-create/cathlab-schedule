@@ -217,6 +217,12 @@ button{font-family:inherit; cursor:pointer}
       <div id="menuStrip"><span class="empty">（發起人未上傳菜單照片）</span></div>
     </div>
 
+    <div class="card" id="ordersCard">
+      <h2>🧾 目前訂單 <span class="cnt" id="ordCnt"></span></h2>
+      <div id="ordersEmpty">還沒有人點餐，搶頭香！</div>
+      <div id="ordersList"></div>
+    </div>
+
     <div id="whoBar">👤 我是：<b id="whoName">（未設定）</b><button class="chip" id="btnWho">更改</button></div>
 
     <div class="card" id="addCard">
@@ -241,13 +247,7 @@ button{font-family:inherit; cursor:pointer}
       </div>
     </div>
 
-    <div class="card">
-      <h2>🧾 目前訂單 <span class="cnt" id="ordCnt"></span></h2>
-      <div id="ordersEmpty">還沒有人點餐，搶頭香！</div>
-      <div id="ordersList"></div>
-    </div>
-
-    <div class="card">
+    <div class="card hidden" id="sumCard">
       <h2>📊 彙總（打電話用）</h2>
       <ul id="sumList"></ul>
       <div class="btnrow">
@@ -256,7 +256,7 @@ button{font-family:inherit; cursor:pointer}
       </div>
     </div>
 
-    <div class="card">
+    <div class="card hidden" id="shareCard">
       <h2>🔗 分享給同事</h2>
       <div id="shareLink"></div>
       <div class="btnrow">
@@ -356,7 +356,7 @@ function newId(){ return Date.now().toString(36) + '-' + randKey(4); }
 /* ---------- 本機儲存 ---------- */
 function lsGet(k, dv){ try{ const v = localStorage.getItem(k); return v === null ? dv : v; }catch(e){ return dv; } }
 function lsSet(k, v){ try{ localStorage.setItem(k, v); }catch(e){} }
-let myName = lsGet('foodorder-name', '');
+let myName = '';   /* 每筆訂餐各自記名字（進入訂餐頁時載入），避免共用電腦把上一個人的名字帶給別人 */
 let cid = lsGet('foodorder-cid', '');
 if(!cid){ cid = randKey(10); lsSet('foodorder-cid', cid); }
 
@@ -420,7 +420,7 @@ function showHome(){
   const m = d.getMinutes();
   if(m % 30) d.setMinutes(m + (30 - m % 30));
   $('#cDeadline').value = toLocalInput(d.toISOString());
-  $('#cCreator').value = myName;
+  $('#cCreator').value = lsGet('foodorder-name', '');
   renderHistory();
 }
 
@@ -503,7 +503,7 @@ $('#btnCreate').addEventListener('click', async () => {
   const deadline = new Date(dlVal);
   if(!(deadline > new Date())){ toast('截止時間需晚於現在'); return; }
   if(!creator){ toast('請輸入你的名字'); $('#cCreator').focus(); return; }
-  myName = creator; lsSet('foodorder-name', myName);
+  lsSet('foodorder-name', creator);   /* 只用於下次發起時帶入，不影響點餐者 */
 
   const btn = $('#btnCreate');
   btn.disabled = true; btn.textContent = '建立中…';
@@ -534,6 +534,7 @@ $('#btnCreate').addEventListener('click', async () => {
       adminToken, images,
     });
     lsSet('foodorder-admin-' + key, adminToken);
+    lsSet('foodorder-name-' + key, creator);   /* 發起人自己不用再填一次名字 */
     pushHistory({k: key, t: title, d: deadline.toISOString()});
     location.replace(location.pathname + '?e=' + key);
   }catch(e){
@@ -557,6 +558,7 @@ async function enterEvent(key){
       return;
     }
     ev = {key, meta: snap.data(), orders: [], unsubs: [], imgsLoaded: false};
+    myName = lsGet('foodorder-name-' + key, '');   /* 名字跟著這筆訂餐記，新訂餐一律空白重填 */
     pushHistory({k: key, t: ev.meta.title, d: ev.meta.deadline});
     showView('#viewEvent');
     renderMeta(); renderWho(); renderOrders(); startCountdown();
@@ -591,6 +593,9 @@ function renderMeta(){
   $('#deadlineLine').innerHTML = '<b>' + esc(fmtDT(m.deadline)) + '</b> 結單 ・ 發起人：' + esc(m.creator || '?');
   const url = shareUrl();
   $('#shareLink').textContent = url;
+  /* 彙總與分享只給發起人 */
+  $('#sumCard').classList.toggle('hidden', !isAdmin());
+  $('#shareCard').classList.toggle('hidden', !isAdmin());
   $('#adminRow').classList.toggle('hidden', !isAdmin());
 }
 function shareUrl(){ return location.origin + location.pathname + '?e=' + ev.key; }
@@ -666,7 +671,8 @@ $('#btnWho').addEventListener('click', () => openNameDialog(false));
 $('#nameOk').addEventListener('click', () => {
   const v = $('#nameInput').value.trim();
   if(!v){ toast('請輸入名字'); return; }
-  myName = v; lsSet('foodorder-name', v);
+  myName = v;
+  if(ev) lsSet('foodorder-name-' + ev.key, v);
   $('#nameOverlay').classList.add('hidden');
   renderWho(); renderOrders();
 });
