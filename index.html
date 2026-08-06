@@ -106,7 +106,7 @@ tbody.day > tr:first-child > td{border-top:3px solid #444}
 /* 時段列（含加台）列高：18 格塞進原 12 格的總高度（12×29=348 → 每列 19.3px），一天總高度維持不變 */
 td.empty{cursor:pointer; height:18.3px}
 tr[data-slot] td.timecell{height:18.3px}
-tr[data-slot] td{padding-top:0; padding-bottom:0; line-height:16px}
+#grid tr[data-slot] td{padding-top:0; padding-bottom:0; line-height:16px}   /* 需 #grid 前綴才蓋得過 #grid td 的內距 */
 td.empty:hover{background:#eef5ff}
 tr.extra td.empty:hover{background:#dde8f5}
 /* 病人資料字級（電腦版）；手機版另有固定設定，改這裡不會影響手機 */
