@@ -181,8 +181,6 @@ button{font-family:inherit; cursor:pointer}
       <h2>🚀 發起訂餐</h2>
       <label class="f">店名／標題 *</label>
       <input type="text" id="cTitle" placeholder="例：健保飲料、明爐燒臘園" maxlength="40">
-      <label class="f">訂購電話（選填）</label>
-      <input type="tel" id="cPhone" placeholder="例：22731043" maxlength="20">
       <label class="f">截止時間 *</label>
       <input type="datetime-local" id="cDeadline">
       <label class="f">菜單照片（可多張，選填）</label>
@@ -207,7 +205,6 @@ button{font-family:inherit; cursor:pointer}
   <div id="viewEvent" class="hidden">
     <div class="card" id="deadlineCard">
       <div style="font-size:19px; font-weight:bold; margin-bottom:2px"><span id="eTitle"></span></div>
-      <div id="ePhone" class="hidden" style="font-size:14px; margin-bottom:4px">☎ <a id="ePhoneLink" href=""></a></div>
       <div id="deadlineLine"></div>
       <div id="countdown">--:--:--</div>
       <div id="cdHint"></div>
@@ -292,8 +289,6 @@ button{font-family:inherit; cursor:pointer}
     <h3>⚙ 管理訂餐</h3>
     <label class="f">店名／標題</label>
     <input type="text" id="mTitle" maxlength="40">
-    <label class="f">訂購電話</label>
-    <input type="tel" id="mPhone" maxlength="20">
     <label class="f">截止時間</label>
     <input type="datetime-local" id="mDeadline">
     <div class="btnrow">
@@ -501,7 +496,6 @@ function compressImage(file){
 /* --- 建立訂餐 --- */
 $('#btnCreate').addEventListener('click', async () => {
   const title = $('#cTitle').value.trim();
-  const phone = $('#cPhone').value.trim();
   const dlVal = $('#cDeadline').value;
   const creator = $('#cCreator').value.trim();
   if(!title){ toast('請輸入店名／標題'); $('#cTitle').focus(); return; }
@@ -534,7 +528,7 @@ $('#btnCreate').addEventListener('click', async () => {
     btn.textContent = '建立中…';
     await fsM.setDoc(fsM.doc(db, 'teams', key, 'meta', 'food'), {
       app: 'food-order', version: 1,
-      title, phone,
+      title,
       deadline: deadline.toISOString(),
       creator, createdAt: new Date().toISOString(),
       adminToken, images,
@@ -594,8 +588,6 @@ function renderMeta(){
   const m = ev.meta;
   document.title = m.title + ' - 揪團點餐';
   $('#eTitle').textContent = m.title;
-  $('#ePhone').classList.toggle('hidden', !m.phone);
-  if(m.phone){ $('#ePhoneLink').textContent = m.phone; $('#ePhoneLink').href = 'tel:' + m.phone; }
   $('#deadlineLine').innerHTML = '<b>' + esc(fmtDT(m.deadline)) + '</b> 結單 ・ 發起人：' + esc(m.creator || '?');
   const url = shareUrl();
   $('#shareLink').textContent = url;
@@ -859,7 +851,7 @@ function fallbackCopy(txt, done){
 $('#btnCopySum').addEventListener('click', () => {
   const m = ev.meta;
   const total = ev.orders.reduce((s, o) => s + (o.qty || 1), 0);
-  const lines = ['【' + m.title + '】共 ' + total + ' 份' + (m.phone ? '　☎ ' + m.phone : '')];
+  const lines = ['【' + m.title + '】共 ' + total + ' 份'];
   summaryGroups().forEach(g => {
     lines.push(g.item + (g.note ? '（' + g.note + '）' : '') + ' ×' + g.qty + '（' + g.names.join('、') + '）');
   });
@@ -867,7 +859,7 @@ $('#btnCopySum').addEventListener('click', () => {
 });
 $('#btnCopyChain').addEventListener('click', () => {
   const m = ev.meta;
-  const lines = ['【' + m.title + '】' + fmtDT(m.deadline) + ' 結單' + (m.phone ? ' ' + m.phone : ''), '點餐連結：' + shareUrl()];
+  const lines = ['【' + m.title + '】' + fmtDT(m.deadline) + ' 結單', '點餐連結：' + shareUrl()];
   ev.orders.forEach(o => {
     lines.push(o.item + (o.note ? '（' + o.note + '）' : '') + ((o.qty||1) > 1 ? ' ×' + o.qty : '') + ' ' + o.name);
   });
@@ -888,7 +880,7 @@ $('#btnLine').addEventListener('click', () => {
 /* --- 管理（發起人） --- */
 $('#btnAdmin').addEventListener('click', () => {
   const m = ev.meta;
-  $('#mTitle').value = m.title; $('#mPhone').value = m.phone || '';
+  $('#mTitle').value = m.title;
   $('#mDeadline').value = toLocalInput(m.deadline);
   $('#adminOverlay').classList.remove('hidden');
 });
@@ -906,7 +898,7 @@ $('#mSave').addEventListener('click', async () => {
   const dl = $('#mDeadline').value;
   if(!title){ toast('標題不可空白'); return; }
   if(!dl){ toast('請設定截止時間'); return; }
-  if(await adminUpdate({title, phone: $('#mPhone').value.trim(), deadline: new Date(dl).toISOString()}, '已儲存')){
+  if(await adminUpdate({title, deadline: new Date(dl).toISOString()}, '已儲存')){
     pushHistory({k: ev.key, t: title, d: new Date(dl).toISOString()});
     $('#adminOverlay').classList.add('hidden');
   }
