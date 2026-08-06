@@ -711,14 +711,14 @@ const COLS = [
   {k:'name',      label:'姓名',     w:74,  wPc:85},   /* 電腦版 +15% */
   {k:'chartNo',   label:'病歷號',   w:79},   /* +10% */
   {k:'birthday',  label:'生日',     w:50},   /* 與術式同寬；較長的身分證號滑鼠停留可看全文 */
-  {k:'sex',       label:'性別',     w:23},   /* -40% */
+  {k:'sex',       label:'性別',     w:24},
   {k:'procedure', label:'術式',     w:50},
-  {k:'physician', label:'醫師',     w:52},   /* -10% */
-  {k:'bed',       label:'床號/醫院', w:74},
-  {k:'detail',    label:'細項',     w:75},
-  {k:'note',      label:'備註',     w:120, wPc:138},  /* 電腦版 +15% */
+  {k:'physician', label:'醫師',     w:56},
+  {k:'bed',       label:'床號/醫院', w:63},
+  {k:'detail',    label:'細項',     w:68},
+  {k:'note',      label:'備註',     w:108, wPc:124},
 ];
-const W_DAY = 32, W_TIME = 40;   /* 時間欄 -10% */
+const W_DAY = 32, W_TIME = 36;
 /* 手機與電腦各自一套欄寬：手機用 w（固定不動），電腦用 wPc */
 const MOBILE_MQ = '(max-width:640px)';
 function isMobileView(){ return typeof matchMedia === 'function' && matchMedia(MOBILE_MQ).matches; }
