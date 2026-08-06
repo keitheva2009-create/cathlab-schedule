@@ -3388,9 +3388,16 @@ if(typeof matchMedia === 'function'){
     $('#st-hint').textContent = '⚠ 雲端設定遺失，請聯絡系統維護者。';
     return;
   }
+  /* 一鍵連線連結：網址 # 後面帶金鑰（例如 …/#XXXX-XXXX-XXXX）→ 自動記住並連線，
+     同事點連結即可使用，不必手動輸入；金鑰不會出現在公開的網頁原始碼裡 */
+  const hashKey = normalizeKey(decodeURIComponent(location.hash.replace(/^#(key=)?/, '')));
+  if(hashKey){
+    try{ localStorage.setItem('cathlab-teamkey', hashKey); }catch(e){}
+    try{ history.replaceState(null, '', location.pathname + location.search); }catch(e){}  /* 網址列不留金鑰 */
+  }
   /* 有記住的團隊金鑰就自動連線；否則停在金鑰輸入畫面 */
-  let savedKey = null;
-  try{ savedKey = normalizeKey(localStorage.getItem('cathlab-teamkey')); }catch(e){}
+  let savedKey = hashKey;
+  try{ savedKey = savedKey || normalizeKey(localStorage.getItem('cathlab-teamkey')); }catch(e){}
   if(savedKey){
     try{ await connectCloud(savedKey); return; }
     catch(e){
