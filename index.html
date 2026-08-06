@@ -709,7 +709,7 @@ const WEEKNAMES = ['星期日','星期一','星期二','星期三','星期四','
 const COLS = [
   /* w＝手機版欄寬（已定案，請勿更動）；wPc＝電腦版欄寬（未填則同手機） */
   {k:'name',      label:'姓名',     w:74,  wPc:85},   /* 電腦版 +15% */
-  {k:'chartNo',   label:'病歷號',   w:79},   /* +10% */
+  {k:'chartNo',   label:'病歷號',   w:75},
   {k:'birthday',  label:'生日',     w:50},   /* 與術式同寬；較長的身分證號滑鼠停留可看全文 */
   {k:'sex',       label:'性別',     w:24},
   {k:'procedure', label:'術式',     w:50},
@@ -718,7 +718,7 @@ const COLS = [
   {k:'detail',    label:'細項',     w:68},
   {k:'note',      label:'備註',     w:108, wPc:124},
 ];
-const W_DAY = 32, W_TIME = 36;
+const W_DAY = 32, W_TIME = 37;
 /* 手機與電腦各自一套欄寬：手機用 w（固定不動），電腦用 wPc */
 const MOBILE_MQ = '(max-width:640px)';
 function isMobileView(){ return typeof matchMedia === 'function' && matchMedia(MOBILE_MQ).matches; }
