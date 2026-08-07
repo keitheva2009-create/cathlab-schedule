@@ -732,9 +732,9 @@ function startEdit(o){
 }
 
 /* --- 訂單列表 --- */
-/* 只能編輯／刪除「自己這台裝置加入」的品項；發起人可管理全部。
-   不以名字判斷，避免把名字改成別人就能動到別人的訂單 */
-function canTouch(o){ return o.ownerId === cid || isAdmin(); }
+/* 只能編輯／刪除「自己這台裝置加入」的品項（發起人也不例外；發起人的管理僅限
+   截止時間、彙總與刪除整筆訂餐）。不以名字判斷，避免改名冒用 */
+function canTouch(o){ return o.ownerId === cid; }
 function renderOrders(){
   const list = ev ? ev.orders : [];
   const totalQty = list.reduce((s, o) => s + (o.qty || 1), 0);
@@ -758,8 +758,7 @@ function renderOrders(){
         '<div class="iname">' + esc(o.item) + ((o.qty || 1) > 1 ? '<span class="qty">×' + o.qty + '</span>' : '') + '</div>' +
         (o.note ? '<div class="inote">📝 ' + esc(o.note) + '</div>' : '') +
         '</div><div class="act">' +
-        (!closed && !me ? '<button class="mini hot" data-act="same" data-id="' + o.id + '">+1</button>' +
-                          '<button class="mini" data-act="samenote" data-id="' + o.id + '">+1 改備註</button>' : '') +
+        (!closed && !me ? '<button class="mini hot" data-act="samenote" data-id="' + o.id + '">點一樣的</button>' : '') +
         (!closed && canTouch(o) ? '<button class="mini" data-act="edit" data-id="' + o.id + '">編輯</button>' +
                                   '<button class="mini" data-act="del" data-id="' + o.id + '">刪除</button>' : '') +
         '</div></div>';
@@ -791,14 +790,7 @@ $('#ordersList').addEventListener('click', async e => {
   }
   const o = ev.orders.find(x => x.id === btn.dataset.id);
   if(!o) return;
-  if(act === 'same'){
-    if(!requireName()) return;
-    btn.disabled = true;
-    try{
-      await writeOrder({id: newId(), name: myName, item: o.item, note: o.note || '', qty: 1, ownerId: cid, ts: Date.now(), from: o.name});
-      toast('已加入：' + o.item + (o.note ? '（' + o.note + '）' : ''));
-    }catch(err){ toast('寫入失敗：' + err.message); btn.disabled = false; }
-  }else if(act === 'samenote'){
+  if(act === 'samenote'){
     if(!requireName()) return;
     editingId = null;
     $('#aItem').value = o.item; $('#aNote').value = o.note || '';
@@ -807,7 +799,7 @@ $('#ordersList').addEventListener('click', async e => {
     $('#btnCancelEdit').classList.add('hidden');
     $('#addCard').scrollIntoView({behavior: 'smooth', block: 'center'});
     $('#aNote').focus();
-    toast('已帶入「' + o.item + '」，請修改備註後按加入');
+    toast('已帶入「' + o.item + '」，備註可修改，按「加入訂單」完成');
   }else if(act === 'edit'){
     startEdit(o);
   }else if(act === 'del'){
