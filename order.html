@@ -231,16 +231,6 @@ button{font-family:inherit; cursor:pointer}
       <input type="text" id="aItem" placeholder="例：碳焙珍波晶凍奶（換鮮奶）" maxlength="60">
       <label class="f">備註（甜度冰塊、加料、不要飯…）</label>
       <input type="text" id="aNote" placeholder="例：一分糖去冰" maxlength="60">
-      <div class="row2" style="margin-top:2px">
-        <div class="narrow">
-          <label class="f">數量</label>
-          <input type="number" id="aQty" value="1" min="1" max="99" inputmode="numeric">
-        </div>
-        <div>
-          <label class="f">掛名（可代別人點）</label>
-          <input type="text" id="aName" maxlength="20">
-        </div>
-      </div>
       <div style="margin-top:13px" class="row2">
         <button class="btn" id="btnAdd">加入訂單</button>
         <button class="btn ghost hidden" id="btnCancelEdit" style="flex:0 0 96px">取消</button>
@@ -665,7 +655,6 @@ $('#imgViewerClose').addEventListener('click', () => $('#imgViewer').classList.a
 /* --- 名字 --- */
 function renderWho(){
   $('#whoName').textContent = myName || '（未設定）';
-  $('#aName').value = myName;
 }
 function openNameDialog(forced){
   $('#nameInput').value = myName;
@@ -704,17 +693,18 @@ $('#btnAdd').addEventListener('click', async () => {
   if(!requireOpen()) return;
   const item = $('#aItem').value.trim();
   const note = $('#aNote').value.trim();
-  const qty = Math.max(1, Math.min(99, +$('#aQty').value || 1));
-  const name = $('#aName').value.trim() || myName;
   if(!item){ toast('請輸入品項'); $('#aItem').focus(); return; }
-  if(!name){ if(!requireName()) return; }
+  if(!requireName()) return;
   const btn = $('#btnAdd');
   btn.disabled = true;
   try{
     const old = editingId && ev.orders.find(o => o.id === editingId);
+    /* 編輯時保留原本的掛名與數量（含發起人代管他人品項的情況） */
     await writeOrder({
       id: old ? old.id : newId(),
-      name, item, note, qty,
+      name: old ? old.name : myName,
+      item, note,
+      qty: old ? (old.qty || 1) : 1,
       ownerId: old ? old.ownerId : cid,
       ts: old ? old.ts : Date.now(),
     });
@@ -725,7 +715,7 @@ $('#btnAdd').addEventListener('click', async () => {
 });
 function cancelEdit(){
   editingId = null;
-  $('#aItem').value = ''; $('#aNote').value = ''; $('#aQty').value = 1; $('#aName').value = myName;
+  $('#aItem').value = ''; $('#aNote').value = '';
   $('#addTitle').textContent = '➕ 我要點餐';
   $('#btnAdd').textContent = '加入訂單';
   $('#btnCancelEdit').classList.add('hidden');
@@ -733,7 +723,7 @@ function cancelEdit(){
 $('#btnCancelEdit').addEventListener('click', cancelEdit);
 function startEdit(o){
   editingId = o.id;
-  $('#aItem').value = o.item; $('#aNote').value = o.note || ''; $('#aQty').value = o.qty || 1; $('#aName').value = o.name;
+  $('#aItem').value = o.item; $('#aNote').value = o.note || '';
   $('#addTitle').textContent = '✏ 編輯品項';
   $('#btnAdd').textContent = '更新';
   $('#btnCancelEdit').classList.remove('hidden');
@@ -811,7 +801,7 @@ $('#ordersList').addEventListener('click', async e => {
   }else if(act === 'samenote'){
     if(!requireName()) return;
     editingId = null;
-    $('#aItem').value = o.item; $('#aNote').value = o.note || ''; $('#aQty').value = 1; $('#aName').value = myName;
+    $('#aItem').value = o.item; $('#aNote').value = o.note || '';
     $('#addTitle').textContent = '➕ 我要點餐';
     $('#btnAdd').textContent = '加入訂單';
     $('#btnCancelEdit').classList.add('hidden');
