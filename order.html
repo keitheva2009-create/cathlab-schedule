@@ -566,7 +566,8 @@ async function enterEvent(key){
     pushHistory({k: key, t: ev.meta.title, d: ev.meta.deadline});
     showView('#viewEvent');
     renderMeta(); renderWho(); renderOrders(); startCountdown();
-    if(!myName) openNameDialog(false);
+    /* 分享連結（點餐者畫面）一進來就先問名字：填過的會帶入，按確定即可 */
+    if(viewerMode || !myName) openNameDialog(false);
 
     /* 監聽 meta（截止時間可能被發起人改動）與訂單（即時同步） */
     ev.unsubs.push(fsM.onSnapshot(metaRef, s => {
