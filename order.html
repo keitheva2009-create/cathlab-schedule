@@ -75,6 +75,9 @@ button{font-family:inherit; cursor:pointer}
 #countdown.soon{animation:blink 1s step-start infinite}
 @keyframes blink{50%{opacity:.35}}
 #cdHint{font-size:13px; color:var(--sub)}
+#minOrderLine{display:inline-block; margin-top:8px; font-size:14px; border-radius:999px; padding:5px 14px}
+#minOrderLine.short{background:#fdecec; color:var(--red)}
+#minOrderLine.ok{background:#e6f4ea; color:var(--green)}
 
 /* ---------- 菜單圖片 ---------- */
 #menuStrip{display:flex; gap:8px; overflow-x:auto; padding-bottom:4px}
@@ -183,6 +186,8 @@ button{font-family:inherit; cursor:pointer}
       <input type="text" id="cTitle" placeholder="例：健保飲料、明爐燒臘園" maxlength="40">
       <label class="f">截止時間 *</label>
       <input type="datetime-local" id="cDeadline">
+      <label class="f">外送低消（老闆規定最少幾份才外送，選填）</label>
+      <input type="number" id="cMinOrder" min="1" max="999" inputmode="numeric" placeholder="例：10">
       <label class="f">菜單照片（可多張，選填）</label>
       <input type="file" id="cImgs" accept="image/*" multiple class="hidden">
       <button class="btn sec small" id="btnPickImg" type="button">📷 選擇照片</button>
@@ -208,6 +213,7 @@ button{font-family:inherit; cursor:pointer}
       <div id="deadlineLine"></div>
       <div id="countdown">--:--:--</div>
       <div id="cdHint"></div>
+      <div><span id="minOrderLine" class="hidden"></span></div>
     </div>
 
     <div id="closedBanner" class="hidden">⛔ 已截止收單</div>
@@ -282,6 +288,8 @@ button{font-family:inherit; cursor:pointer}
     <input type="text" id="mTitle" maxlength="40">
     <label class="f">截止時間</label>
     <input type="datetime-local" id="mDeadline">
+    <label class="f">外送低消（最少幾份才外送，留空＝不設定）</label>
+    <input type="number" id="mMinOrder" min="1" max="999" inputmode="numeric" placeholder="例：10">
     <div class="btnrow">
       <button class="btn" id="mSave">儲存</button>
       <button class="btn ghost" id="mClose" style="flex:0 0 88px">關閉</button>
@@ -491,6 +499,7 @@ function compressImage(file){
 $('#btnCreate').addEventListener('click', async () => {
   const title = $('#cTitle').value.trim();
   const dlVal = $('#cDeadline').value;
+  const minOrder = Math.max(0, Math.min(999, parseInt($('#cMinOrder').value, 10) || 0));
   const creator = $('#cCreator').value.trim();
   if(!title){ toast('請輸入店名／標題'); $('#cTitle').focus(); return; }
   if(!dlVal){ toast('請設定截止時間'); return; }
@@ -522,7 +531,7 @@ $('#btnCreate').addEventListener('click', async () => {
     btn.textContent = '建立中…';
     await fsM.setDoc(fsM.doc(db, 'teams', key, 'meta', 'food'), {
       app: 'food-order', version: 1,
-      title,
+      title, minOrder,
       deadline: deadline.toISOString(),
       creator, createdAt: new Date().toISOString(),
       adminToken, images,
@@ -592,6 +601,21 @@ function renderMeta(){
   $('#sumCard').classList.toggle('hidden', !isAdmin());
   $('#shareCard').classList.toggle('hidden', !isAdmin());
   $('#adminRow').classList.toggle('hidden', !isAdmin());
+  renderMinOrder();
+}
+/* 外送低消進度：顯示在倒數計時下方，未達紅、達標綠（未設定則隱藏） */
+function renderMinOrder(){
+  const el = $('#minOrderLine');
+  const min = +(ev && ev.meta && ev.meta.minOrder) || 0;
+  if(!min){ el.className = 'hidden'; return; }
+  const cur = ev.orders.reduce((s, o) => s + (o.qty || 1), 0);
+  if(cur >= min){
+    el.className = 'ok';
+    el.innerHTML = '🛵 外送低消 <b>' + min + '</b> 份｜目前 <b>' + cur + '</b> 份，已達標 ✔';
+  }else{
+    el.className = 'short';
+    el.innerHTML = '🛵 外送低消 <b>' + min + '</b> 份｜目前 <b>' + cur + '</b> 份，還差 <b>' + (min - cur) + '</b> 份';
+  }
 }
 /* 分享用連結固定帶 &v=m（點餐者畫面）；發起人管理畫面請從首頁「最近的訂餐」進入 */
 function shareUrl(){ return location.origin + location.pathname + '?e=' + ev.key + '&v=m'; }
@@ -767,6 +791,7 @@ function renderOrders(){
   });
   $('#ordersList').innerHTML = html;
   renderSummary();
+  renderMinOrder();
 }
 $('#ordersList').addEventListener('click', async e => {
   const btn = e.target.closest('button[data-act]');
@@ -878,6 +903,7 @@ $('#btnAdmin').addEventListener('click', () => {
   const m = ev.meta;
   $('#mTitle').value = m.title;
   $('#mDeadline').value = toLocalInput(m.deadline);
+  $('#mMinOrder').value = m.minOrder || '';
   $('#adminOverlay').classList.remove('hidden');
 });
 $('#mClose').addEventListener('click', () => $('#adminOverlay').classList.add('hidden'));
@@ -894,7 +920,8 @@ $('#mSave').addEventListener('click', async () => {
   const dl = $('#mDeadline').value;
   if(!title){ toast('標題不可空白'); return; }
   if(!dl){ toast('請設定截止時間'); return; }
-  if(await adminUpdate({title, deadline: new Date(dl).toISOString()}, '已儲存')){
+  const minOrder = Math.max(0, Math.min(999, parseInt($('#mMinOrder').value, 10) || 0));
+  if(await adminUpdate({title, minOrder, deadline: new Date(dl).toISOString()}, '已儲存')){
     pushHistory({k: ev.key, t: title, d: new Date(dl).toISOString()});
     $('#adminOverlay').classList.add('hidden');
   }
