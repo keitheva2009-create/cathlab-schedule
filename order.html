@@ -773,9 +773,9 @@ function startEdit(o){
 }
 
 /* --- 訂單列表 --- */
-/* 只能編輯／刪除「自己這台裝置加入」的品項（發起人也不例外；發起人的管理僅限
-   截止時間、彙總與刪除整筆訂餐）。不以名字判斷，避免改名冒用 */
-function canTouch(o){ return o.ownerId === cid; }
+/* 品項名字與「目前輸入的名字」完全相同才能編輯／刪除（換裝置輸入同名即可接手）；
+   開團者（發起人管理畫面）可編輯／刪除全部；名字不同一律不能動別人的清單 */
+function canTouch(o){ return (myName && o.name === myName) || isAdmin(); }
 function renderOrders(){
   const list = ev ? ev.orders : [];
   const totalQty = list.reduce((s, o) => s + (o.qty || 1), 0);
