@@ -44,6 +44,14 @@ input:focus{outline:2px solid var(--primary); outline-offset:0; border-color:var
 .row2{display:flex; gap:8px}
 .row2>*{flex:1}
 .row2 .narrow{flex:0 0 92px}
+/* 健保勾選格：店名輸入框縮短 30%，右側放可勾選的小方格 */
+.checkWrap{
+  flex:0 0 30%; display:flex; align-items:center; justify-content:center; gap:7px;
+  border:1px solid #cfc7ba; border-radius:10px; background:#fff; font-size:15px;
+  cursor:pointer; user-select:none; padding:10px 4px;
+}
+.checkWrap input[type=checkbox]{width:20px; height:20px; accent-color:var(--primary); margin:0; flex:0 0 auto; cursor:pointer}
+.nhi-tag{display:inline-block; background:#e8f0fe; color:#1a56a8; border:1px solid #bcd2f7; border-radius:7px; padding:1px 8px; font-size:14px; margin-right:6px; vertical-align:2px}
 
 button{font-family:inherit; cursor:pointer}
 .btn{
@@ -183,7 +191,10 @@ button{font-family:inherit; cursor:pointer}
     <div class="card">
       <h2>🚀 發起訂餐</h2>
       <label class="f">店名／標題 *</label>
-      <input type="text" id="cTitle" placeholder="例：健保飲料、明爐燒臘園" maxlength="40">
+      <div class="row2">
+        <input type="text" id="cTitle" placeholder="例：五十嵐、明爐燒臘園" maxlength="40">
+        <label class="checkWrap" for="cNhi"><input type="checkbox" id="cNhi"> 健保</label>
+      </div>
       <label class="f">截止時間 *</label>
       <input type="datetime-local" id="cDeadline">
       <label class="f">外送低消（老闆規定最少幾份才外送，選填）</label>
@@ -285,7 +296,10 @@ button{font-family:inherit; cursor:pointer}
   <div class="dialog">
     <h3>⚙ 管理訂餐</h3>
     <label class="f">店名／標題</label>
-    <input type="text" id="mTitle" maxlength="40">
+    <div class="row2">
+      <input type="text" id="mTitle" maxlength="40">
+      <label class="checkWrap" for="mNhi"><input type="checkbox" id="mNhi"> 健保</label>
+    </div>
     <label class="f">截止時間</label>
     <input type="datetime-local" id="mDeadline">
     <label class="f">外送低消（最少幾份才外送，留空＝不設定）</label>
@@ -500,6 +514,7 @@ $('#btnCreate').addEventListener('click', async () => {
   const title = $('#cTitle').value.trim();
   const dlVal = $('#cDeadline').value;
   const minOrder = Math.max(0, Math.min(999, parseInt($('#cMinOrder').value, 10) || 0));
+  const nhi = $('#cNhi').checked;
   const creator = $('#cCreator').value.trim();
   if(!title){ toast('請輸入店名／標題'); $('#cTitle').focus(); return; }
   if(!dlVal){ toast('請設定截止時間'); return; }
@@ -531,7 +546,7 @@ $('#btnCreate').addEventListener('click', async () => {
     btn.textContent = '建立中…';
     await fsM.setDoc(fsM.doc(db, 'teams', key, 'meta', 'food'), {
       app: 'food-order', version: 1,
-      title, minOrder,
+      title, minOrder, nhi,
       deadline: deadline.toISOString(),
       creator, createdAt: new Date().toISOString(),
       adminToken, images,
@@ -590,10 +605,12 @@ async function enterEvent(key){
   }
 }
 
+/* 顯示／複製文字用的完整標題：勾了健保就帶上「健保」字樣 */
+function fullTitle(){ return (ev.meta.nhi ? '健保 ' : '') + ev.meta.title; }
 function renderMeta(){
   const m = ev.meta;
-  document.title = m.title + ' - 揪團點餐';
-  $('#eTitle').textContent = m.title;
+  document.title = fullTitle() + ' - 揪團點餐';
+  $('#eTitle').innerHTML = (m.nhi ? '<span class="nhi-tag">健保</span>' : '') + esc(m.title);
   $('#deadlineLine').innerHTML = '<b>' + esc(fmtDT(m.deadline)) + '</b> 結單 ・ 發起人：' + esc(m.creator || '?');
   const url = shareUrl();
   $('#shareLink').textContent = url;
@@ -870,9 +887,8 @@ function fallbackCopy(txt, done){
   ta.remove();
 }
 $('#btnCopySum').addEventListener('click', () => {
-  const m = ev.meta;
   const total = ev.orders.reduce((s, o) => s + (o.qty || 1), 0);
-  const lines = ['【' + m.title + '】共 ' + total + ' 份'];
+  const lines = ['【' + fullTitle() + '】共 ' + total + ' 份'];
   summaryGroups().forEach(g => {
     lines.push(g.item + (g.note ? '（' + g.note + '）' : '') + ' ×' + g.qty + '（' + g.names.join('、') + '）');
   });
@@ -880,7 +896,7 @@ $('#btnCopySum').addEventListener('click', () => {
 });
 $('#btnCopyChain').addEventListener('click', () => {
   const m = ev.meta;
-  const lines = ['【' + m.title + '】' + fmtDT(m.deadline) + ' 結單', '點餐連結：' + shareUrl()];
+  const lines = ['【' + fullTitle() + '】' + fmtDT(m.deadline) + ' 結單', '點餐連結：' + shareUrl()];
   ev.orders.forEach(o => {
     lines.push(o.item + (o.note ? '（' + o.note + '）' : '') + ((o.qty||1) > 1 ? ' ×' + o.qty : '') + ' ' + o.name);
   });
@@ -890,11 +906,11 @@ $('#btnCopyChain').addEventListener('click', () => {
 /* --- 分享 --- */
 $('#btnCopyLink').addEventListener('click', () => {
   const m = ev.meta;
-  copyText('【' + m.title + '】' + fmtDT(m.deadline) + ' 結單，點連結自己點餐：\n' + shareUrl(), '已複製，貼到 LINE 群組吧');
+  copyText('【' + fullTitle() + '】' + fmtDT(m.deadline) + ' 結單，點連結自己點餐：\n' + shareUrl(), '已複製，貼到 LINE 群組吧');
 });
 $('#btnLine').addEventListener('click', () => {
   const m = ev.meta;
-  const txt = '【' + m.title + '】' + fmtDT(m.deadline) + ' 結單，點連結自己點餐：\n' + shareUrl();
+  const txt = '【' + fullTitle() + '】' + fmtDT(m.deadline) + ' 結單，點連結自己點餐：\n' + shareUrl();
   window.open('https://line.me/R/share?text=' + encodeURIComponent(txt), '_blank');
 });
 
@@ -904,6 +920,7 @@ $('#btnAdmin').addEventListener('click', () => {
   $('#mTitle').value = m.title;
   $('#mDeadline').value = toLocalInput(m.deadline);
   $('#mMinOrder').value = m.minOrder || '';
+  $('#mNhi').checked = !!m.nhi;
   $('#adminOverlay').classList.remove('hidden');
 });
 $('#mClose').addEventListener('click', () => $('#adminOverlay').classList.add('hidden'));
@@ -921,7 +938,7 @@ $('#mSave').addEventListener('click', async () => {
   if(!title){ toast('標題不可空白'); return; }
   if(!dl){ toast('請設定截止時間'); return; }
   const minOrder = Math.max(0, Math.min(999, parseInt($('#mMinOrder').value, 10) || 0));
-  if(await adminUpdate({title, minOrder, deadline: new Date(dl).toISOString()}, '已儲存')){
+  if(await adminUpdate({title, minOrder, nhi: $('#mNhi').checked, deadline: new Date(dl).toISOString()}, '已儲存')){
     pushHistory({k: ev.key, t: title, d: new Date(dl).toISOString()});
     $('#adminOverlay').classList.add('hidden');
   }
