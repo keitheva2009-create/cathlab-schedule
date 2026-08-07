@@ -792,14 +792,14 @@ function renderOrders(){
     html += '<div class="person' + (me ? ' me' : '') + '">' +
       '<div class="phead"><span class="pname">' + esc(name) + (me ? '（我）' : '') + '</span>' +
       '<span class="psub">' + n + ' 份</span><span class="act">' +
-      (!me && !closed ? '<button class="chip" data-act="copyall" data-name="' + esc(name) + '">跟他點一樣</button>' : '') +
+      (!me && !closed ? '<button class="chip" data-act="copyall" data-name="' + esc(name) + '">我要點一模一樣的</button>' : '') +
       '</span></div>';
     items.forEach(o => {
       html += '<div class="item"><div class="txt">' +
         '<div class="iname">' + esc(o.item) + ((o.qty || 1) > 1 ? '<span class="qty">×' + o.qty + '</span>' : '') + '</div>' +
         (o.note ? '<div class="inote">📝 ' + esc(o.note) + '</div>' : '') +
         '</div><div class="act">' +
-        (!closed && !me ? '<button class="mini hot" data-act="samenote" data-id="' + o.id + '">點同品項但我要改細節</button>' : '') +
+        (!closed && !me ? '<button class="mini hot" data-act="samenote" data-id="' + o.id + '">點同品項但改細節</button>' : '') +
         (!closed && canTouch(o) ? '<button class="mini" data-act="edit" data-id="' + o.id + '">編輯</button>' +
                                   '<button class="mini" data-act="del" data-id="' + o.id + '">刪除</button>' : '') +
         '</div></div>';
