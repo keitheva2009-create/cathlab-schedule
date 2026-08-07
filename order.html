@@ -117,7 +117,7 @@ button{font-family:inherit; cursor:pointer}
 .item .iname .qty{color:var(--primary); font-weight:bold; margin-left:4px}
 .item .inote{font-size:13px; color:#a3540f; word-break:break-all; margin-top:1px}
 .item .act{display:flex; gap:5px; flex-wrap:wrap; justify-content:flex-end; flex:0 0 auto; max-width:46%}
-.mini{border:1px solid #cfc7ba; background:#fff; color:#555; border-radius:8px; padding:4px 9px; font-size:13px; white-space:nowrap}
+.mini{border:1px solid #cfc7ba; background:#fff; color:#555; border-radius:8px; padding:4px 9px; font-size:13px; line-height:1.35; text-wrap:balance}
 .mini:active{background:#f2ede6}
 .mini.hot{border-color:var(--primary); color:var(--primary)}
 .mini:disabled{opacity:.4}
@@ -799,7 +799,7 @@ function renderOrders(){
         '<div class="iname">' + esc(o.item) + ((o.qty || 1) > 1 ? '<span class="qty">×' + o.qty + '</span>' : '') + '</div>' +
         (o.note ? '<div class="inote">📝 ' + esc(o.note) + '</div>' : '') +
         '</div><div class="act">' +
-        (!closed && !me ? '<button class="mini hot" data-act="samenote" data-id="' + o.id + '">點一樣的</button>' : '') +
+        (!closed && !me ? '<button class="mini hot" data-act="samenote" data-id="' + o.id + '">點同品項但我要改細節</button>' : '') +
         (!closed && canTouch(o) ? '<button class="mini" data-act="edit" data-id="' + o.id + '">編輯</button>' +
                                   '<button class="mini" data-act="del" data-id="' + o.id + '">刪除</button>' : '') +
         '</div></div>';
