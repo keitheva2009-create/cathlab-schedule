@@ -270,7 +270,7 @@ button{font-family:inherit; cursor:pointer}
         <button class="btn sec" id="btnCopyLink">複製連結</button>
         <button class="btn sec" id="btnLine">傳到 LINE</button>
       </div>
-      <div class="note">同事點開這個連結只會看到點餐畫面（沒有彙總、只能修改自己加的品項）；您自己點開也一樣。要看彙總或管理，請從首頁的「最近的訂餐」進入。</div>
+      <div class="note">同事點開這個連結只會看到點餐畫面（沒有彙總、只能修改自己名字的品項）。輸入的名字與發起人相同時，就會出現彙總與管理功能。</div>
       <div class="btnrow hidden" id="adminRow">
         <button class="btn ghost" id="btnAdmin">⚙ 管理（發起人）</button>
       </div>
@@ -401,8 +401,14 @@ function setConn(txt){ $('#connStatus').textContent = txt || ''; }
 /* ---------- 目前開啟的訂餐 ---------- */
 let ev = null;   /* {key, meta, orders:[], unsubs:[], imgsLoaded} */
 let cdTimer = null;
-let viewerMode = false;   /* 分享出去的連結帶 &v=m：固定為點餐者畫面，即使發起人自己點開也不出現彙總／管理 */
-function isAdmin(){ return !viewerMode && !!(ev && ev.meta && ev.meta.adminToken && lsGet('foodorder-admin-' + ev.key, '') === ev.meta.adminToken); }
+let viewerMode = false;   /* 分享出去的連結帶 &v=m：預設為點餐者畫面 */
+/* 發起人判定：輸入的名字與發起人完全相同 → 顯示彙總／分享／管理（任何連結、任何裝置都適用）；
+   或發起人自己的裝置（建立時留下的金鑰）從首頁進入 */
+function isAdmin(){
+  if(!ev || !ev.meta) return false;
+  if(myName && ev.meta.creator && myName === ev.meta.creator) return true;
+  return !viewerMode && !!(ev.meta.adminToken && lsGet('foodorder-admin-' + ev.key, '') === ev.meta.adminToken);
+}
 function isClosed(){ return !!(ev && ev.meta && Date.now() >= new Date(ev.meta.deadline).getTime()); }
 
 /* ===================================================================
@@ -708,7 +714,7 @@ $('#nameOk').addEventListener('click', () => {
   const v = $('#nameInput').value.trim();
   if(!v){ toast('請輸入名字'); return; }
   myName = v;
-  if(ev) lsSet('foodorder-name-' + ev.key, v);
+  if(ev){ lsSet('foodorder-name-' + ev.key, v); renderMeta(); }   /* 名字＝發起人時要即時出現彙總／管理 */
   $('#nameOverlay').classList.add('hidden');
   renderWho(); renderOrders();
 });
