@@ -263,6 +263,7 @@ button{font-family:inherit; cursor:pointer}
         <button class="btn sec" id="btnCopyLink">複製連結</button>
         <button class="btn sec" id="btnLine">傳到 LINE</button>
       </div>
+      <div class="note">同事點開這個連結只會看到點餐畫面（沒有彙總、只能修改自己加的品項）；您自己點開也一樣。要看彙總或管理，請從首頁的「最近的訂餐」進入。</div>
       <div class="btnrow hidden" id="adminRow">
         <button class="btn ghost" id="btnAdmin">⚙ 管理（發起人）</button>
       </div>
@@ -388,14 +389,17 @@ function setConn(txt){ $('#connStatus').textContent = txt || ''; }
 /* ---------- 目前開啟的訂餐 ---------- */
 let ev = null;   /* {key, meta, orders:[], unsubs:[], imgsLoaded} */
 let cdTimer = null;
-function isAdmin(){ return !!(ev && ev.meta && ev.meta.adminToken && lsGet('foodorder-admin-' + ev.key, '') === ev.meta.adminToken); }
+let viewerMode = false;   /* 分享出去的連結帶 &v=m：固定為點餐者畫面，即使發起人自己點開也不出現彙總／管理 */
+function isAdmin(){ return !viewerMode && !!(ev && ev.meta && ev.meta.adminToken && lsGet('foodorder-admin-' + ev.key, '') === ev.meta.adminToken); }
 function isClosed(){ return !!(ev && ev.meta && Date.now() >= new Date(ev.meta.deadline).getTime()); }
 
 /* ===================================================================
    路由：?e=金鑰 → 訂餐頁；否則首頁
    =================================================================== */
 function boot(){
-  const key = new URLSearchParams(location.search).get('e');
+  const p = new URLSearchParams(location.search);
+  const key = p.get('e');
+  viewerMode = p.get('v') === 'm';
   if(key && /^[A-Za-z0-9]{12}$/.test(key)) enterEvent(key);
   else showHome();
 }
@@ -598,7 +602,8 @@ function renderMeta(){
   $('#shareCard').classList.toggle('hidden', !isAdmin());
   $('#adminRow').classList.toggle('hidden', !isAdmin());
 }
-function shareUrl(){ return location.origin + location.pathname + '?e=' + ev.key; }
+/* 分享用連結固定帶 &v=m（點餐者畫面）；發起人管理畫面請從首頁「最近的訂餐」進入 */
+function shareUrl(){ return location.origin + location.pathname + '?e=' + ev.key + '&v=m'; }
 
 /* --- 倒數計時 --- */
 function startCountdown(){
@@ -736,7 +741,9 @@ function startEdit(o){
 }
 
 /* --- 訂單列表 --- */
-function canTouch(o){ return o.ownerId === cid || o.name === myName || isAdmin(); }
+/* 只能編輯／刪除「自己這台裝置加入」的品項；發起人可管理全部。
+   不以名字判斷，避免把名字改成別人就能動到別人的訂單 */
+function canTouch(o){ return o.ownerId === cid || isAdmin(); }
 function renderOrders(){
   const list = ev ? ev.orders : [];
   const totalQty = list.reduce((s, o) => s + (o.qty || 1), 0);
