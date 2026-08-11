@@ -173,7 +173,26 @@ td.filled.done{background:#d9efdb; color:#1b5e20}
 .log-act.刪除{color:#b3261e; font-weight:bold}
 .log-act.取消{color:#b26a00; font-weight:bold}
 .log-act.修改, .log-act.復原, .log-act.移動, .log-act.匯入, .log-act.設定, .log-act.還原, .log-act.建立帳號{color:#1a56a8; font-weight:bold}
-#audit-info{margin-top:10px; color:#777; font-size:12px}
+#audit-info{margin-top:10px; color:#777; font-size:12px; display:flex; align-items:center; gap:10px; flex-wrap:wrap}
+#audit-info.hidden{display:none}
+#op-edit-times{
+  border:1px solid #bbb; border-radius:6px; background:#fff; color:#555;
+  padding:2px 8px; font-size:11.5px; font-family:inherit; cursor:pointer; white-space:nowrap;
+}
+#op-edit-times:hover{background:#eef5ff; border-color:#1a56a8; color:#1a56a8}
+#op-edit{
+  margin-top:8px; padding:8px 10px; background:#f6f8fb; border:1px solid #d7e0ee; border-radius:8px;
+  display:flex; align-items:center; gap:10px; flex-wrap:wrap; font-size:12.5px; color:#555;
+}
+#op-edit.hidden{display:none}
+#op-edit label{display:flex; align-items:center; gap:5px}
+#op-edit input[type=time]{padding:3px 6px; border:1px solid #bbb; border-radius:6px; font-family:inherit; font-size:13px}
+#op-edit button{
+  padding:4px 10px; border:1px solid #bbb; border-radius:6px; background:#fff;
+  cursor:pointer; font-size:12px; font-family:inherit;
+}
+#op-edit button.primary{background:#1a56a8; border-color:#1a56a8; color:#fff}
+#op-edit .oe-hint{color:#999; font-size:11.5px}
 #userBadge{color:#1a56a8; font-weight:bold; font-size:12.5px; white-space:nowrap}
 
 /* 個人手術排程管理 */
@@ -405,6 +424,7 @@ body.modal-open .overlay, body.modal-open .dialog{touch-action:auto}
   .form-grid input[type=date]{-webkit-appearance:none; appearance:none; min-height:0}
   .form-grid textarea{height:36px; min-height:36px}   /* 備註列高與其他欄位一致，需要時可自行拉高 */
   .lg-form input, .lg-form select{font-size:16px}
+  #op-edit input[type=time]{font-size:16px}
   .op-row{margin-top:10px; padding:8px 9px; gap:6px; font-size:12px}
   .op-row .op-gap{margin-left:0}
   /* 按鈕列固定在視窗底部，內容再長也不會被切掉 */
@@ -477,7 +497,17 @@ body.modal-open .overlay, body.modal-open .dialog{touch-action:auto}
       <button id="f-end" class="end" type="button">■ 現在結束</button>
       <button id="f-end-clear" class="op-clear hidden" type="button" title="清除結束時間">✕</button>
     </div>
-    <div id="audit-info" class="hidden"></div>
+    <div id="audit-info" class="hidden">
+      <span id="audit-text"></span>
+      <button id="op-edit-times" type="button">🕐 編輯起訖時間</button>
+    </div>
+    <div id="op-edit" class="hidden">
+      <label>手術開始 <input type="time" id="op-edit-start"></label>
+      <label>手術結束 <input type="time" id="op-edit-end"></label>
+      <button id="op-edit-apply" type="button" class="primary">套用並儲存</button>
+      <button id="op-edit-cancel" type="button">取消</button>
+      <span class="oe-hint">留空＝清除該時間</span>
+    </div>
     <div id="cxl-info" class="hidden"></div>
     <div class="dialog-actions">
       <button id="f-cancelCase" class="warn hidden">✂ 取消排程（劃線保留）</button>
@@ -1236,8 +1266,9 @@ function openCaseModal(caseObj, preset){
   const ai = [];
   if(who('created')) ai.push('建立：' + who('created'));
   if(who('updated') && (c.updatedAt !== c.createdAt)) ai.push('最後修改：' + who('updated'));
-  $('#audit-info').textContent = ai.join('　｜　');
-  $('#audit-info').classList.toggle('hidden', !ai.length);
+  $('#audit-text').textContent = ai.join('　｜　');
+  $('#audit-info').classList.toggle('hidden', !caseObj);   /* 既有排程一律顯示（含編輯起訖時間鈕） */
+  $('#op-edit').classList.add('hidden');
   $('#f-delete').classList.toggle('hidden', !caseObj);
   $('#caseModal').classList.remove('hidden');
   $('#f-name').focus();
@@ -3207,6 +3238,35 @@ $('#f-end').onclick = () => {
 };
 $('#f-start-clear').onclick = () => { if(confirm('確定清除手術開始時間？')){ opStart = ''; renderOpUI(); saveCase(); } };
 $('#f-end-clear').onclick = () => { if(confirm('確定清除手術結束時間？')){ opEnd = ''; renderOpUI(); saveCase(); } };
+
+/* 手動編輯手術起訖時間（補登或修正用） */
+$('#op-edit-times').onclick = () => {
+  const toHM = iso => {
+    if(!iso) return '';
+    const d = new Date(iso);
+    return isNaN(d) ? '' : String(d.getHours()).padStart(2, '0') + ':' + String(d.getMinutes()).padStart(2, '0');
+  };
+  $('#op-edit-start').value = toHM(opStart);
+  $('#op-edit-end').value = toHM(opEnd);
+  $('#op-edit').classList.toggle('hidden');
+};
+$('#op-edit-cancel').onclick = () => $('#op-edit').classList.add('hidden');
+$('#op-edit-apply').onclick = () => {
+  /* 以「排程當天的日期」組時間戳，補登隔天以前的刀才會正確 */
+  const mk = hm => {
+    if(!hm) return '';
+    const base = $('#f-date').value || (editing && editing.date) || ymd(new Date());
+    const d = new Date(base + 'T' + hm + ':00');
+    return isNaN(d) ? '' : d.toISOString();
+  };
+  const ns = mk($('#op-edit-start').value), ne = mk($('#op-edit-end').value);
+  if(!ns && ne && !confirm('只填了結束時間、開始為空白，確定套用？')) return;
+  if(ns && ne && ne < ns && !confirm('結束時間早於開始時間，確定套用？')) return;
+  opStart = ns; opEnd = ne;
+  $('#op-edit').classList.add('hidden');
+  renderOpUI();
+  saveCase();   /* 與「現在開始／結束」相同：立即儲存並同步 */
+};
 $('#f-save').onclick = saveCase;
 $('#f-cancel').onclick = closeCaseModal;
 $('#f-delete').onclick = deleteCase;
