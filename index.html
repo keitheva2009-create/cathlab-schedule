@@ -169,6 +169,9 @@ td.filled.done{background:#d9efdb; color:#1b5e20}
 .log-table{border-collapse:collapse; width:100%; font-size:12.5px}
 .log-table th, .log-table td{border-bottom:1px solid #eee; padding:5px 8px; text-align:left; white-space:nowrap}
 .log-table th{position:sticky; top:0; background:#f5f5f5; z-index:1}
+/* 帳號欄 -30%、病人欄 -50%；過長以…截斷，滑鼠停留看全文 */
+.log-table th:nth-child(2), .log-table td:nth-child(2){max-width:118px; overflow:hidden; text-overflow:ellipsis}
+.log-table th:nth-child(4), .log-table td:nth-child(4){max-width:140px; overflow:hidden; text-overflow:ellipsis}
 .log-act.新增{color:#17623b; font-weight:bold}
 .log-act.刪除{color:#b3261e; font-weight:bold}
 .log-act.取消{color:#b26a00; font-weight:bold}
@@ -2737,7 +2740,7 @@ async function openLogModal(){
         <td>${esc((e.at || '').slice(5, 10))} ${esc(fmtT(e.at))}</td>
         <td>${esc(who)}${sameName ? '' : '<span style="color:#999"> (' + esc(e.by || '') + ')</span>'}</td>
         <td class="log-act ${esc(e.action || '')}">${esc(e.action || '')}</td>
-        <td>${esc(e.name || '')}</td>
+        <td title="${esc(e.name || '')}">${esc(e.name || '')}</td>
         <td>${e.site ? '<span style="color:#888">' + (e.site === 'bm' ? '生醫' : '新竹') + '</span> ' : ''}${e.date ? esc(e.date) : ''}${e.slot ? ' ' + esc(slotLabel(e.slot)) : ''}${roomTxt}</td>
       </tr>`);
     });
