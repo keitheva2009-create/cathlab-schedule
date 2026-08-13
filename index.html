@@ -3094,8 +3094,7 @@ function rdragUpdate(x, y){
 }
 
 $('#grid').addEventListener('pointerdown', e => {
-  if(e.button === 2){                            /* 右鍵長按 → 調整佔用時間 */
-    if(mode === 'cloud' && !currentUser) return;
+  if(e.button === 2){                            /* 右鍵：短按＝複製、長按＝調整佔用時間 */
     const td = e.target.closest('td.filled');
     if(!td) return;
     const c = state.cases.find(x => x.id === td.dataset.id);
@@ -3103,7 +3102,11 @@ $('#grid').addEventListener('pointerdown', e => {
     e.preventDefault();
     const max = maxSpanAt(c);
     rdrag = {c, span: c.span || 1, max, colX: e.clientX, startY: e.clientY, active: false};
-    rdrag.timer = setTimeout(rdragActivate, 400);
+    /* 調整時長會改資料 → 需登入；複製為唯讀 → 不需 */
+    rdrag.timer = setTimeout(() => {
+      if(mode === 'cloud' && !currentUser){ rdragCleanup(); return; }
+      rdragActivate();
+    }, 400);
     return;
   }
   if(e.button > 0) return;
@@ -3141,6 +3144,44 @@ $('#scroll').addEventListener('touchmove', e => { if(drag && drag.active) e.prev
 /* 右鍵在排程上不跳出瀏覽器選單（長按要用來調整手術時間） */
 $('#grid').addEventListener('contextmenu', e => { if(drag || rdrag || e.target.closest('td.filled')) e.preventDefault(); });
 
+/* 右鍵「短按」＝複製整筆排程資料（TSV＋HTML 表格，貼到 Excel 自動分欄、貼到 Word 成表格） */
+function buildCaseClip(c){
+  const roomName = (c.site === 'bm') ? (state.bmRoomName || 'SIEMENS') : (state.roomNames[c.room] || '');
+  const cells = [
+    c.date, rangeLabel(c.slot, c.span || 1), roomName,
+    c.name, c.chartNo, c.birthday, c.sex, c.procedure, c.physician, c.bed, c.detail, c.note,
+    (c.startedAt || c.endedAt) ? ((c.startedAt ? fmtT(c.startedAt) : '') + '~' + (c.endedAt ? fmtT(c.endedAt) : '')) : '',
+  ].map(v => String(v == null ? '' : v));
+  const tsv = cells.map(v => v.replace(/\t/g, ' ').replace(/\r?\n/g, ' ')).join('\t');
+  const html = '<table><tr>' + cells.map(v => '<td>' + esc(v).replace(/\n/g, '<br>') + '</td>').join('') + '</tr></table>';
+  return {tsv, html};
+}
+async function copyCaseToClipboard(c){
+  const {tsv, html} = buildCaseClip(c);
+  let ok = false;
+  try{
+    if(navigator.clipboard && window.ClipboardItem){
+      await navigator.clipboard.write([new ClipboardItem({
+        'text/plain': new Blob([tsv], {type: 'text/plain'}),
+        'text/html': new Blob([html], {type: 'text/html'}),
+      })]);
+      ok = true;
+    }else if(navigator.clipboard && navigator.clipboard.writeText){
+      await navigator.clipboard.writeText(tsv); ok = true;
+    }
+  }catch(e){}
+  if(!ok){
+    try{
+      const ta = document.createElement('textarea');
+      ta.value = tsv; ta.style.cssText = 'position:fixed;opacity:0';
+      document.body.appendChild(ta); ta.select();
+      ok = document.execCommand('copy'); ta.remove();
+    }catch(e){}
+  }
+  toast(ok ? '📋 已複製「' + (c.name || '(未填姓名)') + '」，可直接貼到 Excel／Word'
+           : '複製失敗：瀏覽器不允許存取剪貼簿');
+}
+
 /* 右鍵長按：拖曳中／放開套用 */
 document.addEventListener('pointermove', e => {
   if(!rdrag) return;
@@ -3150,11 +3191,15 @@ document.addEventListener('pointermove', e => {
   }
   rdragUpdate(e.clientX, e.clientY);
 });
-document.addEventListener('pointerup', () => {
+document.addEventListener('pointerup', e => {
   if(!rdrag) return;
   const {c, span, active} = rdrag;
   rdragCleanup();
-  if(!active) return;
+  if(!active){
+    /* 右鍵「短按」（未達長按門檻、也沒有拖動）＝複製這筆排程 */
+    if(e.button === 2) copyCaseToClipboard(c);
+    return;
+  }
   suppressNextClick();
   const live = state.cases.find(x => x.id === c.id);
   if(!live || (live.span || 1) === span) return;
