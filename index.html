@@ -175,7 +175,28 @@ td.filled.done{background:#d9efdb; color:#1b5e20}
 .log-act.新增{color:#17623b; font-weight:bold}
 .log-act.刪除{color:#b3261e; font-weight:bold}
 .log-act.取消{color:#b26a00; font-weight:bold}
-.log-act.修改, .log-act.復原, .log-act.移動, .log-act.匯入, .log-act.設定, .log-act.還原, .log-act.建立帳號{color:#1a56a8; font-weight:bold}
+.log-act.修改, .log-act.復原, .log-act.移動, .log-act.匯入, .log-act.設定, .log-act.還原, .log-act.建立帳號, .log-act.權限{color:#1a56a8; font-weight:bold}
+/* 唯讀帳號：編輯視窗只能看、不能改；設定視窗只留個人設定與檢視功能 */
+#ro-hint{margin:-4px 0 10px; padding:6px 10px; background:#fff3cd; color:#7a5200; border-radius:6px; font-size:12.5px}
+#caseModal.ro #f-save, #caseModal.ro #f-delete, #caseModal.ro #f-cancelCase,
+#caseModal.ro #opRow, #caseModal.ro #op-edit-times, #caseModal.ro #op-edit{display:none !important}
+#caseModal.ro .form-grid input:disabled, #caseModal.ro .form-grid select:disabled, #caseModal.ro .form-grid textarea:disabled{
+  background:#f7f7f7; color:#333; opacity:1; -webkit-text-fill-color:#333}
+#settingsModal.ro .form-grid, #settingsModal.ro #s-save, #settingsModal.ro #s-import, #settingsModal.ro #s-changeFile,
+#settingsModal.ro #cloud-copykey, #settingsModal.ro #cloud-backupdir, #settingsModal.ro #s-export{display:none !important}
+/* 唯讀帳號：收起邀請編輯的元素、游標改一般 */
+body.ro #me-add, body.ro .me-cal-wrap > p.me-sub{display:none !important}
+body.ro td.empty, body.ro td.leadcell{cursor:default}
+#siteBar #userBadge{max-width:42vw; overflow:hidden; text-overflow:ellipsis}
+#siteBar #btnSettings{flex-shrink:0}
+/* 帳號權限（管理者） */
+.roles-dialog{max-width:560px}
+.roles-table{border-collapse:collapse; width:100%; font-size:13px}
+.roles-table th, .roles-table td{border-bottom:1px solid #eee; padding:6px 8px; text-align:left; vertical-align:middle}
+.roles-table th{background:#f5f5f5}
+.roles-table select{padding:4px 6px; border:1px solid #bbb; border-radius:6px; font-family:inherit; font-size:13px}
+.roles-table td.role-viewer{color:#7a5200}
+.roles-table td.role-admin{color:#1a56a8; font-weight:bold}
 #audit-info{margin-top:10px; color:#777; font-size:12px; display:flex; align-items:center; gap:10px; flex-wrap:wrap}
 #audit-info.hidden{display:none}
 #op-edit-times{
@@ -438,6 +459,9 @@ body.modal-open .overlay, body.modal-open .dialog{touch-action:auto}
   }
   .dialog-actions button{padding:8px 13px}
   #cxl-info, #audit-info{font-size:11.5px}
+  .roles-dialog{max-width:94vw}
+  .roles-table{font-size:12.5px}
+  .roles-table select{font-size:16px}   /* 同上：防 iOS 點選單時放大 */
 }
 
 @media print{
@@ -477,6 +501,7 @@ body.modal-open .overlay, body.modal-open .dialog{touch-action:auto}
 <div class="overlay hidden" id="caseModal">
   <div class="dialog">
     <h2 id="caseModalTitle">新增排程</h2>
+    <p id="ro-hint" class="hidden">🔒 此帳號為唯讀，僅供檢視，無法修改排程。</p>
     <div class="form-grid">
       <label>日期<input type="date" id="f-date"></label>
       <label>導管室<select id="f-room"></select></label>
@@ -544,6 +569,7 @@ body.modal-open .overlay, body.modal-open .dialog{touch-action:auto}
       <button id="cloud-copykey" class="hidden">複製團隊金鑰</button>
       <button id="cloud-backupdir" class="hidden">設定每日備份資料夾…</button>
       <button id="cloud-log" class="hidden">📋 異動紀錄</button>
+      <button id="cloud-roles" class="hidden">👥 帳號權限</button>
       <button id="cloud-pw" class="hidden">個人設定（姓名／密碼）</button>
       <button id="cloud-logout" class="hidden">登出帳號</button>
       <button id="cloud-leave" class="hidden">清除此裝置的金鑰</button>
@@ -712,6 +738,21 @@ body.modal-open .overlay, body.modal-open .dialog{touch-action:auto}
       <button id="pd-cancel">取消</button>
       <button id="pd-save" class="primary">儲存</button>
     </div>
+  </div>
+</div>
+
+<!-- 帳號權限（只有管理者可開啟） -->
+<div class="overlay hidden" id="rolesModal">
+  <div class="dialog roles-dialog">
+    <h2>帳號權限</h2>
+    <p class="lg-hint">
+      <b>可編輯</b>：一般團隊成員，可新增／修改／移動／取消排程。<br>
+      <b>唯讀</b>：只能看排程、異動紀錄與右鍵複製；不能新增／修改／移動／取消排程，也不能改負責醫師與待排手術（適合病房、心超室的公用檢視帳號）。<br>
+      <b>管理者</b>：可編輯排程，並可在此設定其他人的權限。<br>
+      帳號需登入過一次才會出現在清單；改完立即生效（對方畫面會即時變成唯讀）。
+    </p>
+    <div id="roles-list"></div>
+    <div class="dialog-actions"><span class="spacer"></span><button id="roles-close">關閉</button></div>
   </div>
 </div>
 
@@ -1145,7 +1186,7 @@ function tbodyHtml(date){
       for(let r = 0; r < R; r++){
         const nm = leadName(key, site, r, row.lead);
         h += `<td class="leadcell${r===1?' rs':''}" colspan="${COLS.length}" data-date="${key}" data-room="${r}" data-sess="${row.lead}"
-          title="時段負責醫師｜點此設定">${nm ? '<span class="lead-name">' + esc(nm) + '</span>' : '<span class="lead-empty">（點此設定負責醫師）</span>'}</td>`;
+          title="時段負責醫師${isViewer() ? '' : '｜點此設定'}">${nm ? '<span class="lead-name">' + esc(nm) + '</span>' : (isViewer() ? '' : '<span class="lead-empty">（點此設定負責醫師）</span>')}</td>`;
       }
       h += '</tr>';
       return;
@@ -1232,7 +1273,7 @@ function updateCxlUI(){
   btn.textContent = cxlDraft ? '↩ 復原排程' : '✂ 取消排程（劃線保留）';
   $('#cxl-info').classList.toggle('hidden', !cxlDraft);
   $('#opRow').classList.toggle('hidden', !!cxlDraft);   /* 已取消的排程不提供手術開始/結束按鈕，避免誤蓋時間戳 */
-  if(cxlDraft) $('#cxl-info').textContent = '⚠ 此排程已於 ' + fmtDT(cxlDraft) + ' 劃線取消（不佔時段，可按「復原排程」恢復）';
+  if(cxlDraft) $('#cxl-info').textContent = '⚠ 此排程已於 ' + fmtDT(cxlDraft) + ' 劃線取消（不佔時段' + (isViewer() ? '' : '，可按「復原排程」恢復') + '）';
 }
 function renderOpUI(){
   $('#op-start-time').textContent = opStart ? fmtT(opStart) : '';
@@ -1273,10 +1314,26 @@ function openCaseModal(caseObj, preset){
   $('#audit-info').classList.toggle('hidden', !caseObj);   /* 既有排程一律顯示（含編輯起訖時間鈕） */
   $('#op-edit').classList.add('hidden');
   $('#f-delete').classList.toggle('hidden', !caseObj);
+  applyCaseModalRole();
   $('#caseModal').classList.remove('hidden');
   $('#f-name').focus();
 }
 function closeCaseModal(){ $('#caseModal').classList.add('hidden'); editing = null; }
+/* 唯讀帳號：編輯視窗變成「檢視」——欄位鎖定、儲存／刪除／取消／手術時間按鈕全部收起 */
+function applyCaseModalRole(){
+  const ro = isViewer();
+  const m = $('#caseModal');
+  m.classList.toggle('ro', ro);
+  /* 文字欄用 readOnly（仍可反白複製病歷號等）；下拉選單只能 disabled */
+  m.querySelectorAll('.form-grid input, .form-grid textarea').forEach(el => { el.readOnly = ro; });
+  m.querySelectorAll('.form-grid select').forEach(el => { el.disabled = ro; });
+  $('#ro-hint').classList.toggle('hidden', !ro);
+  $('#f-cancel').textContent = ro ? '關閉' : '取消';
+  /* 唯讀時按鈕都收起，若又沒有稽核文字就整列隱藏，免得留一塊空白 */
+  if(editing) $('#audit-info').classList.toggle('hidden', ro && !$('#audit-text').textContent);
+  if(ro) $('#caseModalTitle').textContent = '檢視排程（唯讀）';
+  else if(!m.classList.contains('hidden')) $('#caseModalTitle').textContent = editing ? '編輯排程' : '新增排程';
+}
 
 function learnOption(list, val){
   if(!val) return false;
@@ -1287,6 +1344,7 @@ function learnOption(list, val){
 
 function saveCase(){
   if(mode === 'cloud' && !currentUser){ closeCaseModal(); ensureLogin(); return false; }
+  if(isViewer()){ denyEdit(); return false; }
   const slot = $('#f-slot').value;
   const c = {
     id: editing ? editing.id : uid(),
@@ -1368,6 +1426,7 @@ function saveCase(){
 function deleteCase(){
   if(!editing) return;
   if(mode === 'cloud' && !currentUser){ closeCaseModal(); ensureLogin(); return; }
+  if(isViewer()){ denyEdit(); return; }
   const hint = editing.cancelledAt ? '' : '\n（若想保留劃線紀錄讓大家知道原本有排，請改用「✂ 取消排程」）';
   if(!confirm('確定「永久」刪除「' + (editing.name||'') + '」這筆排程？' + (mode === 'cloud' ? '\n（異動紀錄會留下刪除者帳號）' : '將不留任何紀錄。') + hint)) return;
   const delId = editing.id, delSnap = snapOf(state.cases.find(c => c.id === delId) || editing);
@@ -1405,6 +1464,7 @@ function openSettings(){
     $('#cloud-copykey').classList.toggle('hidden', !isCloud);
     $('#cloud-backupdir').classList.toggle('hidden', !isCloud);
     $('#cloud-log').classList.toggle('hidden', !isCloud);
+    $('#cloud-roles').classList.toggle('hidden', !(isCloud && isAdmin()));   /* 只有管理者看得到 */
     $('#cloud-pw').classList.toggle('hidden', !(isCloud && currentUser));
     $('#cloud-logout').classList.toggle('hidden', !(isCloud && currentUser));
     $('#cloud-leave').classList.toggle('hidden', !isCloud);
@@ -1422,9 +1482,12 @@ function openSettings(){
       })();
     }
   }
+  $('#settingsModal').classList.toggle('ro', isViewer());   /* 唯讀：只留檢視類與個人設定 */
+  $('#s-cancel').textContent = isViewer() ? '關閉' : '取消';
   $('#settingsModal').classList.remove('hidden');
 }
 function saveSettings(){
+  if(isViewer()){ denyEdit(); return; }
   if(mode === 'cloud' && openSettings._rev !== metaRev
      && !confirm('提醒：你編輯設定期間，其他電腦也修改過設定或選單。\n按「確定」將以你目前畫面的內容覆蓋對方的修改。')) return;
   const lines = v => v.split(/\r?\n/).map(x=>x.trim()).filter(Boolean);
@@ -1824,7 +1887,7 @@ $('#imp-year').onchange = impReparse;
 $('#imp-cancel').onclick = () => $('#importModal').classList.add('hidden');
 $('#imp-confirm').onclick = async () => {
   if(!impParsed || !impParsed.cases.length) return;
-  if(mode === 'cloud' && !currentUser){ $('#importModal').classList.add('hidden'); ensureLogin(); return; }
+  if(!requireEdit()){ $('#importModal').classList.add('hidden'); return; }
   const ev = impEvaluate(impParsed.cases);   /* 以當下最新的排程重新比對 */
   const adds = ev.filter(e => e.status === 'add').map(e => e.c);
   const dup = ev.filter(e => e.status === 'dup').length;
@@ -2009,6 +2072,7 @@ async function connectCloud(key, opts){
 }
 
 function cloudWriteCase(c){
+  if(!guardWrite()) return;
   const {fsM, db, key} = cloud;
   setStatus('☁ 儲存中…');
   fsM.setDoc(fsM.doc(db, 'teams', key, 'cases', c.id), c)
@@ -2016,6 +2080,7 @@ function cloudWriteCase(c){
     .catch(e => { setStatus('⚠ 同步失敗'); toast('雲端寫入失敗：' + e.message); });
 }
 function cloudDeleteCase(id){
+  if(!guardWrite()) return;
   const {fsM, db, key} = cloud;
   setStatus('☁ 儲存中…');
   fsM.deleteDoc(fsM.doc(db, 'teams', key, 'cases', id))
@@ -2023,6 +2088,7 @@ function cloudDeleteCase(id){
     .catch(e => { setStatus('⚠ 同步失敗'); toast('雲端刪除失敗：' + e.message); });
 }
 function cloudWriteMeta(){
+  if(!guardWrite()) return;
   const {fsM, db, key} = cloud;
   fsM.setDoc(fsM.doc(db, 'teams', key, 'meta', 'settings'), cloudMetaFromState())
     .catch(e => toast('設定同步失敗：' + e.message));
@@ -2031,6 +2097,7 @@ function cloudWriteMeta(){
 function cloudLearnOptions(added){
   const keys = Object.keys(added || {}).filter(k => added[k] && added[k].length);
   if(!keys.length) return;
+  if(!guardWrite()) return;
   const {fsM, db, key} = cloud;
   const patch = {};
   keys.forEach(k => { patch['options.' + k] = fsM.arrayUnion(...added[k]); });
@@ -2038,6 +2105,7 @@ function cloudLearnOptions(added){
     .catch(e => toast('選單同步失敗：' + e.message));
 }
 async function cloudImportCases(list){
+  if(isViewer()) throw new Error('此帳號為唯讀，無法寫入');
   const {fsM, db, key} = cloud;
   for(let i = 0; i < list.length; i += 400){
     const batch = fsM.writeBatch(db);
@@ -2046,6 +2114,7 @@ async function cloudImportCases(list){
   }
 }
 async function cloudReplaceAll(newState){
+  if(isViewer()) throw new Error('此帳號為唯讀，無法寫入');
   const {fsM, db, key} = cloud;
   const oldIds = state.cases.map(c => c.id);
   state.roomNames = newState.roomNames;
@@ -2134,13 +2203,14 @@ function hasLeadRows(date){ const d = date.getDay(); return d >= 1 && d <= 5; } 
 
 function cloudWriteLead(id, rec){
   if(mode !== 'cloud' || !cloud) return;
+  if(!guardWrite()) return;
   const {fsM, db, key} = cloud;
   (rec ? fsM.setDoc(fsM.doc(db, 'teams', key, 'leads', id), rec)
        : fsM.deleteDoc(fsM.doc(db, 'teams', key, 'leads', id)))
     .catch(e => toast('負責醫師儲存失敗：' + e.message));
 }
 function openLeadModal(date, siteKey, room, sess){
-  if(mode === 'cloud' && !currentUser){ ensureLogin(); return; }
+  if(!requireEdit()) return;
   leadEditing = {date, site: siteKey, room, sess};
   const d = new Date(date + 'T00:00:00');
   const def = leadDefault(date, siteKey, room, sess);
@@ -2158,6 +2228,7 @@ function openLeadModal(date, siteKey, room, sess){
 }
 function saveLead(clear){
   if(!leadEditing) return;
+  if(isViewer()){ denyEdit(); return; }
   const {date, site: s, room, sess} = leadEditing;
   const id = leadId(date, s, room, sess);
   const name = clear ? '' : $('#lead-name').value.trim();
@@ -2199,12 +2270,14 @@ function normPending(p){
 }
 function cloudWritePending(p){
   if(mode !== 'cloud' || !cloud) return;
+  if(!guardWrite()) return;
   const {fsM, db, key} = cloud;
   fsM.setDoc(fsM.doc(db, 'teams', key, 'pending', p.id), p)
     .catch(e => toast('待排手術儲存失敗：' + e.message));
 }
 function cloudDeletePending(id){
   if(mode !== 'cloud' || !cloud) return;
+  if(!guardWrite()) return;
   const {fsM, db, key} = cloud;
   fsM.deleteDoc(fsM.doc(db, 'teams', key, 'pending', id))
     .catch(e => toast('待排手術刪除失敗：' + e.message));
@@ -2248,6 +2321,7 @@ function findFreeSlot(dateStr, siteKey){
 
 /* 把待排手術排入某一天：找空位 → 建立排程 → 從待排清單移除 */
 function placeOnDay(p, dateStr){
+  if(isViewer()){ denyEdit(); return; }
   const siteKey = p.site === 'bm' ? 'bm' : 'hc';
   const spot = findFreeSlot(dateStr, siteKey);
   if(!spot){
@@ -2332,6 +2406,7 @@ function openMeModal(){
 
 /* --- 待排手術的新增／編輯 --- */
 function openPendModal(p){
+  if(!requireEdit()) return;
   pendEditing = p || null;
   $('#pend-title').textContent = p ? '編輯待排手術' : '新增待排手術';
   $('#pd-sex').innerHTML = '<option value=""></option>' + (state.options.sex || ['M','F']).map(v => `<option>${esc(v)}</option>`).join('');
@@ -2344,6 +2419,7 @@ function openPendModal(p){
   setTimeout(() => $('#pd-name').focus(), 50);
 }
 function savePend(){
+  if(isViewer()){ denyEdit(); return; }
   const name = $('#pd-name').value.trim();
   if(!name){ alert('請輸入姓名'); return; }
   const p = normPending({
@@ -2371,6 +2447,7 @@ function savePend(){
 }
 function deletePend(){
   if(!pendEditing) return;
+  if(isViewer()){ denyEdit(); return; }
   if(!confirm('刪除待排手術「' + (pendEditing.name || '') + '」？')) return;
   const id = pendEditing.id;
   pending = pending.filter(x => x.id !== id);
@@ -2382,6 +2459,7 @@ function deletePend(){
 
 /* --- 把已排的刀換到別天 --- */
 function moveCaseToDay(c, dateStr){
+  if(isViewer()){ denyEdit(); return; }
   if(c.date === dateStr){ toast('已經在這一天了'); return; }
   const siteKey = c.site || 'hc';
   const spot = findFreeSlot(dateStr, siteKey);
@@ -2408,6 +2486,7 @@ function moveCaseToDay(c, dateStr){
 }
 /* --- 把已排的刀收回待排清單 --- */
 function caseToPending(c){
+  if(isViewer()){ denyEdit(); return; }
   const live = state.cases.find(x => x.id === c.id);
   if(!live){ toast('這筆排程已不存在'); return; }
   const snap = snapOf(live);
@@ -2457,7 +2536,7 @@ function pdragActivate(){
   try{ if(navigator.vibrate) navigator.vibrate(20); }catch(e){}
 }
 $('#meModal').addEventListener('pointerdown', e => {
-  if(e.button > 0) return;
+  if(e.button > 0 || !canEdit()) return;   /* 唯讀／未登入不拖曳 */
   const it = e.target.closest('.me-item');
   if(it){   /* 待排項目：移動 6px 即開始拖曳 */
     const p = pending.find(x => x.id === it.dataset.id);
@@ -2520,7 +2599,7 @@ $('#me-close').onclick = () => $('#meModal').classList.add('hidden');
 $('#me-logout').onclick = () => {
   if(!confirm('登出帳號？下次編輯排程前需重新登入。')) return;
   try{ localStorage.removeItem('cathlab-user'); }catch(e){}
-  currentUser = null; currentName = ''; updateUserBadge();
+  clearUser();
   $('#meModal').classList.add('hidden');
   $('#loginOverlay').classList.remove('hidden');
   setTimeout(() => $('#lg-id').focus(), 50);
@@ -2575,6 +2654,32 @@ $('#pendModal').addEventListener('keydown', e => {
 let currentUser = null;   /* 已登入的員工編號 */
 let currentName = '';     /* 顯示姓名（沒設定時以員工編號代替） */
 let currentHome = 'hc';   /* 登入後預設進入的院區 */
+let currentRole = 'editor';   /* 帳號權限：admin（管理者）／editor（可編輯，預設）／viewer（唯讀） */
+let userUnsub = null;         /* 監聽自己帳號文件（權限被改時即時生效） */
+
+/* ---- 帳號權限 ----
+   權限只是「應用層」的保護（擋誤操作、讓公用檢視帳號改不到排程）；
+   真正的安全邊界仍是團隊金鑰（知道金鑰的人在技術上仍可直接寫資料庫）。 */
+const ROLE_LABEL = {admin: '管理者', editor: '可編輯', viewer: '唯讀'};
+function roleOf(u){ const r = u && u.role; return (r === 'viewer' || r === 'admin') ? r : 'editor'; }
+function isViewer(){ return mode === 'cloud' && !!currentUser && currentRole === 'viewer'; }
+function isAdmin(){ return mode === 'cloud' && !!currentUser && currentRole === 'admin'; }
+/* 目前這個人能不能改資料（未登入或唯讀都不能） */
+function canEdit(){ return mode !== 'cloud' || (!!currentUser && currentRole !== 'viewer'); }
+function denyEdit(){ toast('🔒 此帳號為唯讀，無法編輯排程'); }
+/* 會改資料的操作先過這關：未登入 → 開登入視窗；唯讀 → 提示並擋下 */
+function requireEdit(){
+  if(mode !== 'cloud') return true;
+  if(!currentUser){ ensureLogin(); return false; }
+  if(currentRole === 'viewer'){ denyEdit(); return false; }
+  return true;
+}
+/* 雲端寫入的最後一道防線（正常流程在 UI 就擋掉了；這裡只是保險） */
+function guardWrite(){
+  if(!isViewer()) return true;
+  toast('🔒 唯讀帳號：變更未儲存，請重新整理頁面');
+  return false;
+}
 
 const PW_ITER = 100000;
 async function sha256Hex(str){
@@ -2597,30 +2702,82 @@ async function verifyPassword(u, pw){
   return (await sha256Hex((u.salt || '') + pw)) === u.passHash;   /* 舊格式，登入後自動升級 */
 }
 function whoLabel(){ return currentName || currentUser || ''; }
-function updateUserBadge(){ $('#userBadge').textContent = currentUser ? '👤 ' + whoLabel() : ''; }
+function updateUserBadge(){
+  $('#userBadge').textContent = currentUser ? '👤 ' + whoLabel() + (currentRole === 'viewer' ? '（唯讀）' : '') : '';
+  document.body.classList.toggle('ro', isViewer());   /* 唯讀時收起「新增待排」等邀請編輯的元素 */
+}
+/* 清掉登入狀態（登出、切換團隊、非雲端模式） */
+function clearUser(){
+  currentUser = null; currentName = ''; currentRole = 'editor';
+  if(userUnsub){ try{ userUnsub(); }catch(e){} userUnsub = null; }
+  updateUserBadge();
+}
 
 function ensureLogin(){
-  if(mode !== 'cloud'){ currentUser = null; currentName = ''; updateUserBadge(); return; }
+  if(mode !== 'cloud'){ clearUser(); return; }
   let saved = null;
   try{ saved = JSON.parse(localStorage.getItem('cathlab-user') || 'null'); }catch(e){}
   if(saved && saved.team === cloud.key && saved.empId){
     currentUser = saved.empId; currentName = saved.name || '';
     currentHome = saved.home === 'bm' ? 'bm' : 'hc';
+    currentRole = roleOf(saved);
     updateUserBadge();
+    watchMyUser();         /* 權限以雲端為準，可能在下一刻更新 */
     goHomeView();          /* 已記住帳號：直接進入預設院區＋今日 */
     return;
   }
-  currentUser = null; currentName = ''; currentHome = 'hc'; updateUserBadge();
+  clearUser(); currentHome = 'hc';
   $('#loginOverlay').classList.remove('hidden');
   setTimeout(() => $('#lg-id').focus(), 50);
 }
-function setUser(empId, name, home){
+function setUser(empId, name, home, role){
   currentUser = empId; currentName = name || '';
   if(home !== undefined) currentHome = home === 'bm' ? 'bm' : 'hc';
-  try{ localStorage.setItem('cathlab-user', JSON.stringify({empId, name: currentName, home: currentHome, team: cloud.key})); }catch(e){}
+  if(role !== undefined) currentRole = roleOf({role});
+  try{ localStorage.setItem('cathlab-user', JSON.stringify({empId, name: currentName, home: currentHome, role: currentRole, team: cloud.key})); }catch(e){}
   updateUserBadge();
+  watchMyUser();
   $('#loginOverlay').classList.add('hidden');
   $('#lg-pw').value = '';
+}
+/* 監聽自己的帳號文件：管理者改了權限（或姓名）→ 這邊立刻套用，不必重新登入 */
+function watchMyUser(){
+  if(userUnsub){ try{ userUnsub(); }catch(e){} userUnsub = null; }
+  if(mode !== 'cloud' || !cloud || !currentUser) return;
+  const {fsM, db, key} = cloud;
+  const me = currentUser;
+  userUnsub = fsM.onSnapshot(fsM.doc(db, 'teams', key, 'users', me), s => {
+    if(!s.exists() || currentUser !== me) return;
+    const u = s.data() || {};
+    const r = roleOf(u);
+    if(r !== currentRole){
+      const prev = currentRole;
+      currentRole = r;
+      try{
+        const sv = JSON.parse(localStorage.getItem('cathlab-user') || 'null');
+        if(sv && sv.empId === me){ sv.role = r; localStorage.setItem('cathlab-user', JSON.stringify(sv)); }
+      }catch(e){}
+      updateUserBadge();
+      applyCaseModalRole();
+      if(!$('#settingsModal').classList.contains('hidden')){
+        /* 跨越唯讀才重畫設定視窗（會重填欄位）；只是 editor⇄admin 的話只切換權限按鈕，不丟掉正在打的內容 */
+        if(r === 'viewer' || prev === 'viewer') openSettings();
+        else $('#cloud-roles').classList.toggle('hidden', !isAdmin());
+      }
+      if(r !== 'admin') $('#rolesModal').classList.add('hidden');   /* 被降級：關閉權限清單 */
+      if(r === 'viewer'){
+        /* 變成唯讀：正在進行的拖曳與編輯視窗一律收掉，避免停在無法完成的狀態 */
+        dragCleanup(); rdragCleanup(); pdragCleanup();
+        $('#leadModal').classList.add('hidden'); leadEditing = null;
+        $('#pendModal').classList.add('hidden'); pendEditing = null;
+        $('#importModal').classList.add('hidden');
+      }
+      if(!settingsOpen()) render();   /* 重畫：唯讀時負責醫師空格不再顯示「點此設定」 */
+      toast('你的帳號權限已變更為「' + ROLE_LABEL[r] + '」');
+    }
+    if(typeof u.name === 'string' && u.name && u.name !== currentName){ currentName = u.name; updateUserBadge(); }
+  }, e => { /* 讀不到自己的帳號時維持現狀 */ });
+  cloud.unsubs.push(userUnsub);
 }
 async function loginSubmit(){
   const id = $('#lg-id').value.trim().toUpperCase();
@@ -2632,32 +2789,38 @@ async function loginSubmit(){
     const {fsM, db, key} = cloud;
     const ref = fsM.doc(db, 'teams', key, 'users', id);
     const snap = await fsM.getDoc(ref);
-    if(snap.exists()){
+    if(snap.exists() && snap.data().passHash){
       const u = snap.data();
       let ok = await verifyPassword(u, pw);
       if(!ok && u.mustChange && pw.trim().toUpperCase() === id) ok = true;   /* 預設密碼不分大小寫 */
       if(!ok){ alert('密碼錯誤'); return; }
-      if(u.algo !== 'pbkdf2'){   /* 舊雜湊格式透明升級 */
-        try{ await fsM.setDoc(ref, Object.assign({}, u, await makePassRecord(u.mustChange ? id : pw))); }catch(e){}
+      if(u.algo !== 'pbkdf2'){   /* 舊雜湊格式透明升級（只寫密碼欄位，不動其他欄位） */
+        try{ await fsM.setDoc(ref, await makePassRecord(u.mustChange ? id : pw), {merge: true}); }catch(e){}
       }
-      setUser(id, u.name || '', u.defaultSite);
+      setUser(id, u.name || '', u.defaultSite, roleOf(u));
       goHomeView();
-      toast('👤 ' + whoLabel() + ' 已登入');
+      toast('👤 ' + whoLabel() + ' 已登入' + (roleOf(u) === 'viewer' ? '（唯讀帳號）' : ''));
       /* 只有還沒設定姓名時才跳設定視窗；仍用預設密碼者僅提醒，避免每次登入都被打斷 */
       if(!u.name) openPwModal(true);
       else if(u.mustChange) setTimeout(() => toast('提醒：你仍在使用預設密碼，可在「⚙ 設定 → 個人設定」修改'), 3600);
     }else{
-      /* 第一次登入：帳號密碼都是員工編號（不分大小寫）→ 自動建立帳號 */
+      /* 第一次登入：帳號密碼都是員工編號（不分大小寫）→ 自動建立帳號
+         （管理者若已先建立帳號文件但尚無密碼，也視同第一次登入，沿用既有的姓名／權限） */
       if(pw.trim().toUpperCase() !== id){
         alert('查無此帳號「' + id + '」。\n第一次登入請以員工編號作為帳號與密碼（例如 G00212 / G00212）。');
         return;
       }
-      await fsM.setDoc(ref, Object.assign({empId: id, name: '', defaultSite: 'hc', mustChange: true, createdAt: new Date().toISOString()}, await makePassRecord(id)));
-      setUser(id, '', 'hc');
+      const pre = snap.exists() ? (snap.data() || {}) : {};
+      const rec = Object.assign({empId: id, mustChange: true,
+        name: typeof pre.name === 'string' ? pre.name : '',
+        defaultSite: pre.defaultSite === 'bm' ? 'bm' : 'hc',
+        createdAt: pre.createdAt || new Date().toISOString()}, await makePassRecord(id));
+      await fsM.setDoc(ref, rec, {merge: true});   /* merge：預先設定的權限等欄位原樣保留 */
+      setUser(id, rec.name || '', rec.defaultSite, roleOf(pre));
       goHomeView();
       cloudLog('建立帳號', {name: id});
       toast('👤 已建立帳號 ' + id);
-      openPwModal(true);
+      if(!rec.name) openPwModal(true);
     }
   }catch(e){ alert('登入失敗：' + e.message); }
   finally{ $('#lg-submit').disabled = false; }
@@ -2699,7 +2862,7 @@ async function savePersonal(){
       if(!okOld){ alert('目前密碼錯誤'); return; }
       patch = Object.assign(patch, await makePassRecord(npw), {mustChange: false});
     }
-    await fsM.setDoc(ref, Object.assign({}, u, patch));
+    await fsM.setDoc(ref, patch, {merge: true});   /* 只寫有改的欄位：管理者同時改的權限不會被舊快照蓋掉 */
     const homeChanged = currentHome !== home;
     setUser(currentUser, name, home);
     $('#pwModal').classList.add('hidden');
@@ -2864,6 +3027,7 @@ function pushUndo(label, fn){
 }
 /* fn 回傳字串＝無法復原的原因（該筆會退回堆疊）；否則視為成功 */
 async function doUndo(){
+  if(isViewer()){ denyEdit(); return; }
   const e = undoStack.pop();
   if(!e){ toast('沒有可以復原的動作'); return; }
   let r;
@@ -3102,15 +3266,15 @@ $('#grid').addEventListener('pointerdown', e => {
     e.preventDefault();
     const max = maxSpanAt(c);
     rdrag = {c, span: c.span || 1, max, colX: e.clientX, startY: e.clientY, active: false};
-    /* 調整時長會改資料 → 需登入；複製為唯讀 → 不需 */
+    /* 調整時長會改資料 → 需登入且非唯讀；複製為唯讀 → 不需 */
     rdrag.timer = setTimeout(() => {
-      if(mode === 'cloud' && !currentUser){ rdragCleanup(); return; }
+      if(!canEdit()){ rdragCleanup(); return; }
       rdragActivate();
     }, 400);
     return;
   }
   if(e.button > 0) return;
-  if(mode === 'cloud' && !currentUser) return;   /* 未登入不可拖曳移動 */
+  if(!canEdit()) return;   /* 未登入／唯讀帳號不可拖曳移動 */
   if(e.target.closest('span.cxl, span.dup')) return;   /* 這些是點擊開啟，不拖曳 */
   const td = e.target.closest('td.filled');
   if(!td) return;
@@ -3229,7 +3393,10 @@ $('#grid').addEventListener('click', e => {
   const f = e.target.closest('td.filled');
   if(f){ const c = state.cases.find(x => x.id === f.dataset.id); if(c) openCaseModal(c); return; }
   const t = e.target.closest('td.empty');
-  if(t) openCaseModal(null, t.dataset);
+  if(t){
+    if(isViewer()){ denyEdit(); return; }   /* 唯讀帳號不開新增視窗 */
+    openCaseModal(null, t.dataset);
+  }
 });
 
 function setSite(s){
@@ -3356,7 +3523,7 @@ $('#s-importFile').onchange = async e => {
       refreshDatalists();
     });
     if(mode === 'cloud'){
-      if(!currentUser){ $('#settingsModal').classList.add('hidden'); ensureLogin(); e.target.value = ''; return; }
+      if(!requireEdit()){ $('#settingsModal').classList.add('hidden'); e.target.value = ''; return; }
       const rNow = new Date().toISOString();
       incoming.cases.forEach(c => { c.updatedBy = currentUser; c.updatedByName = whoLabel(); c.updatedAt = rNow; });
       $('#settingsModal').classList.add('hidden');
@@ -3447,11 +3614,62 @@ $('#pwModal').addEventListener('keydown', e => {
 });
 $('#log-close').onclick = () => $('#logModal').classList.add('hidden');
 $('#cloud-log').onclick = () => { $('#settingsModal').classList.add('hidden'); openLogModal(); };
+
+/* --- 帳號權限（管理者） --- */
+async function openRolesModal(){
+  if(mode !== 'cloud' || !cloud) return;
+  if(!isAdmin()){ toast('只有管理者可以設定帳號權限'); return; }
+  $('#roles-list').innerHTML = '<div style="padding:12px;color:#888">載入中…</div>';
+  $('#rolesModal').classList.remove('hidden');
+  try{
+    const {fsM, db, key} = cloud;
+    const snap = await fsM.getDocs(fsM.collection(db, 'teams', key, 'users'));
+    const users = [];
+    snap.forEach(d => { const u = d.data() || {}; users.push({id: d.id, name: u.name || '', role: roleOf(u)}); });
+    users.sort((a, b) => a.id.localeCompare(b.id));
+    if(!users.length){ $('#roles-list').innerHTML = '<div style="padding:12px;color:#888">尚無帳號</div>'; return; }
+    $('#roles-list').innerHTML = '<table class="roles-table"><thead><tr><th>員工編號</th><th>姓名</th><th>權限</th></tr></thead><tbody>'
+      + users.map(u => {
+        const self = u.id === currentUser;
+        const opts = ['editor', 'viewer', 'admin']
+          .map(r => `<option value="${r}"${r === u.role ? ' selected' : ''}>${ROLE_LABEL[r]}</option>`).join('');
+        return `<tr data-id="${esc(u.id)}"><td>${esc(u.id)}${self ? ' <span class="me-sub">（自己）</span>' : ''}</td>`
+          + `<td>${esc(u.name)}</td>`
+          + `<td class="role-${u.role}"><select class="role-sel" data-id="${esc(u.id)}"${self ? ' disabled title="不能更改自己的權限"' : ''}>${opts}</select></td></tr>`;
+      }).join('') + '</tbody></table>';
+  }catch(e){ $('#roles-list').innerHTML = '<div style="padding:12px;color:#c62828">讀取失敗：' + esc(e.message) + '</div>'; }
+}
+$('#roles-list').addEventListener('change', async e => {
+  const sel = e.target.closest('select.role-sel');
+  if(!sel) return;
+  if(!isAdmin()){ toast('只有管理者可以設定帳號權限'); $('#rolesModal').classList.add('hidden'); return; }
+  const id = sel.dataset.id, role = sel.value;
+  const wasAdmin = sel.parentElement.classList.contains('role-admin');
+  if(id === currentUser){ toast('不能更改自己的權限'); openRolesModal(); return; }
+  if(wasAdmin && role !== 'admin' && !confirm('要把管理者 ' + id + ' 改為「' + ROLE_LABEL[role] + '」嗎？\n改了之後他就不能再設定別人的權限。')){ openRolesModal(); return; }
+  sel.disabled = true;
+  try{
+    const {fsM, db, key} = cloud;
+    /* 交易：寫入前再確認自己仍是管理者（避免兩位管理者互相降級後還能繼續改；離線時直接失敗而不排隊） */
+    await fsM.runTransaction(db, async tx => {
+      const me = await tx.get(fsM.doc(db, 'teams', key, 'users', currentUser));
+      if(!me.exists() || roleOf(me.data()) !== 'admin') throw new Error('你已不是管理者，無法變更權限');
+      tx.update(fsM.doc(db, 'teams', key, 'users', id),
+        {role, roleBy: currentUser || '', roleByName: whoLabel() || '', roleAt: new Date().toISOString()});
+    });
+    cloudLog('權限', {name: id + ' → ' + ROLE_LABEL[role]});
+    sel.parentElement.className = 'role-' + role;
+    toast('已將 ' + id + ' 設為「' + ROLE_LABEL[role] + '」，對方畫面會立即生效');
+  }catch(err){ alert('設定失敗：' + err.message); openRolesModal(); }
+  finally{ sel.disabled = false; }
+});
+$('#roles-close').onclick = () => $('#rolesModal').classList.add('hidden');
+$('#cloud-roles').onclick = () => { $('#settingsModal').classList.add('hidden'); openRolesModal(); };
 $('#cloud-pw').onclick = () => { $('#settingsModal').classList.add('hidden'); openPwModal(false); };
 $('#cloud-logout').onclick = () => {
   if(!confirm('登出帳號？下次編輯排程前需重新登入。')) return;
   try{ localStorage.removeItem('cathlab-user'); }catch(e){}
-  currentUser = null; currentName = ''; updateUserBadge();
+  clearUser();
   $('#settingsModal').classList.add('hidden');
   $('#loginOverlay').classList.remove('hidden');
 };
@@ -3476,6 +3694,7 @@ document.addEventListener('keydown', e => {
     else if(!$('#pendModal').classList.contains('hidden')){ $('#pendModal').classList.add('hidden'); pendEditing = null; }
     else if(!$('#meModal').classList.contains('hidden')) $('#meModal').classList.add('hidden');
     else if(!$('#pwModal').classList.contains('hidden')) $('#pwModal').classList.add('hidden');
+    else if(!$('#rolesModal').classList.contains('hidden')) $('#rolesModal').classList.add('hidden');
     else if(!$('#logModal').classList.contains('hidden')) $('#logModal').classList.add('hidden');
     /* loginOverlay 不能用 Esc 關閉：雲端模式編輯前必須登入 */
   }
