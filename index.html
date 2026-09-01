@@ -507,8 +507,8 @@ body.modal-open .overlay, body.modal-open .dialog{touch-action:auto}
       <label>導管室<select id="f-room"></select></label>
       <label>開始時段<select id="f-slot"></select></label>
       <label>佔用時間<select id="f-span"></select></label>
-      <label>姓名 *<input id="f-name" autocomplete="off"></label>
-      <label>病歷號<input id="f-chartNo" autocomplete="off"></label>
+      <label>姓名<input id="f-name" autocomplete="off"></label>
+      <label>病歷號 *<input id="f-chartNo" autocomplete="off"></label>
       <label>生日<input id="f-birthday" placeholder="YYYY/MM/DD" autocomplete="off"></label>
       <label>性別<select id="f-sex"></select></label>
       <label>術式<input id="f-procedure" list="dl-procedure" autocomplete="off"></label>
@@ -721,8 +721,8 @@ body.modal-open .overlay, body.modal-open .dialog{touch-action:auto}
   <div class="dialog lg-dialog">
     <h2 id="pend-title">待排手術</h2>
     <div class="form-grid">
-      <label class="half">姓名 *<input id="pd-name" autocomplete="off"></label>
-      <label class="half">病歷號<input id="pd-chartNo" autocomplete="off"></label>
+      <label class="half">姓名<input id="pd-name" autocomplete="off"></label>
+      <label class="half">病歷號 *<input id="pd-chartNo" autocomplete="off"></label>
       <label class="half">生日<input id="pd-birthday" placeholder="YYYY/MM/DD" autocomplete="off"></label>
       <label class="half">性別<select id="pd-sex"></select></label>
       <label class="half">術式<input id="pd-procedure" list="dl-procedure" autocomplete="off"></label>
@@ -854,6 +854,13 @@ function md(d){ return (d.getMonth()+1) + '/' + d.getDate(); }
 function mondayOf(d){ const x = new Date(d); x.setHours(0,0,0,0); x.setDate(x.getDate() - (x.getDay()+6)%7); return x; }
 function addDays(d,n){ const x = new Date(d); x.setDate(x.getDate()+n); return x; }
 function nowTime(){ return new Date().toLocaleTimeString('zh-TW',{hour12:false}); }
+/* 訊息中怎麼稱呼一位病人：姓名優先，沒填就用病歷號（必填欄位已改為病歷號） */
+function caseLabel(c){
+  const n = String((c && c.name) || '').trim();
+  if(n) return n;
+  const no = String((c && c.chartNo) || '').trim();
+  return no ? '病歷號 ' + no : '(未填姓名)';
+}
 
 function slotEnd(s){ const m = +s.slice(0,2) * 60 + +s.slice(2) + 30; return Math.floor(m/60) + ':' + String(m%60).padStart(2,'0'); }
 function slotLabel(s){ return s[0]==='X' ? '加台'+s[1] : (+s.slice(0,2)) + ':' + s.slice(2) + '~' + slotEnd(s); }
@@ -1219,7 +1226,7 @@ function tbodyHtml(date){
             const ot = opText(c);
             if(ot) tip += '\n' + ot;   /* 滑鼠停留可看完整手術時間 */
             if(e.clipped) inner += `<span class="dup" data-id="${esc(c.id)}" title="此排程原長 ${spanLabel(c.span||1)}，與其他排程重疊僅部分顯示，點擊調整">⚠ 與其他排程重疊</span>`;
-            inner += dups.map(d => `<span class="dup" data-id="${esc(d.id)}" title="⚠ 兩台電腦同時排到重疊時段，點擊開啟調整">⚠ ${esc(d.name)}（時段重疊）</span>`).join('');
+            inner += dups.map(d => `<span class="dup" data-id="${esc(d.id)}" title="⚠ 兩台電腦同時排到重疊時段，點擊開啟調整">⚠ ${esc(caseLabel(d))}（時段重疊）</span>`).join('');
             inner += cxlIn.map(x => cxlSpan(x, 'name')).join('');   /* 同格被取消的排程劃線顯示 */
           }
           return `<td class="filled ${roomCls(r)} c-${col.k}${opCls}${clashCls}${ci===0&&r===1?' rs':''}"${rsAttr} data-id="${esc(c.id)}" title="${esc(tip)}">${inner}</td>`;
@@ -1367,7 +1374,7 @@ function saveCase(){
     cancelledAt: cxlDraft || '',
   };
   if(!c.date){ alert('請選擇日期'); return false; }
-  if(!c.name){ alert('請輸入姓名'); return false; }
+  if(!c.chartNo){ alert('請輸入病歷號'); return false; }   /* 必填欄位＝病歷號（姓名可留空） */
   if(!c.cancelledAt){   /* 已劃線取消的排程不佔時段，也不擋人 */
     const [a1,a2] = rangeOf(c);
     const clash = state.cases.find(o => {
@@ -1375,7 +1382,7 @@ function saveCase(){
       const [b1,b2] = rangeOf(o);
       return a1 <= b2 && b1 <= a2;
     });
-    if(clash){ alert('時段衝突：該時段已排「' + clash.name + '」（' + slotLabel(clash.slot) + '）'); return false; }
+    if(clash){ alert('時段衝突：該時段已排「' + caseLabel(clash) + '」（' + slotLabel(clash.slot) + '）'); return false; }
   }
   /* 稽核欄位：誰建立、誰最後修改、誰取消 */
   const nowIso = new Date().toISOString();
@@ -1402,15 +1409,16 @@ function saveCase(){
     const live = state.cases.find(x => x.id === editing.id);   /* 同步可能已置換 state，改以 id 定位 */
     const before = snapOf(live || editing);
     if(live) Object.assign(live, c); else state.cases.push(c);
-    const label = (!before.cancelledAt && c.cancelledAt) ? '取消「' + c.name + '」'
-      : (before.cancelledAt && !c.cancelledAt) ? '恢復「' + c.name + '」'
-      : (before.startedAt !== c.startedAt || before.endedAt !== c.endedAt) ? '手術時間「' + c.name + '」'
-      : '修改「' + c.name + '」';
+    const who = caseLabel(c);
+    const label = (!before.cancelledAt && c.cancelledAt) ? '取消「' + who + '」'
+      : (before.cancelledAt && !c.cancelledAt) ? '恢復「' + who + '」'
+      : (before.startedAt !== c.startedAt || before.endedAt !== c.endedAt) ? '手術時間「' + who + '」'
+      : '修改「' + who + '」';
     pushUndo(label, () => upsertCase(before));
   }else{
     state.cases.push(c);
     const nid = c.id;
-    pushUndo('新增「' + c.name + '」', () => removeCaseById(nid));
+    pushUndo('新增「' + caseLabel(c) + '」', () => removeCaseById(nid));
   }
   closeCaseModal();
   if(mode === 'cloud'){ cloudWriteCase(c); cloudLearnOptions(added); cloudLog(logAct, c); }
@@ -1428,14 +1436,14 @@ function deleteCase(){
   if(mode === 'cloud' && !currentUser){ closeCaseModal(); ensureLogin(); return; }
   if(isViewer()){ denyEdit(); return; }
   const hint = editing.cancelledAt ? '' : '\n（若想保留劃線紀錄讓大家知道原本有排，請改用「✂ 取消排程」）';
-  if(!confirm('確定「永久」刪除「' + (editing.name||'') + '」這筆排程？' + (mode === 'cloud' ? '\n（異動紀錄會留下刪除者帳號）' : '將不留任何紀錄。') + hint)) return;
+  if(!confirm('確定「永久」刪除「' + caseLabel(editing) + '」這筆排程？' + (mode === 'cloud' ? '\n（異動紀錄會留下刪除者帳號）' : '將不留任何紀錄。') + hint)) return;
   const delId = editing.id, delSnap = snapOf(state.cases.find(c => c.id === delId) || editing);
   state.cases = state.cases.filter(c => c.id !== delId);
   closeCaseModal();
   if(mode === 'cloud'){ cloudDeleteCase(delId); cloudLog('刪除', delSnap); }
   else persist();
   render();
-  pushUndo('刪除「' + delSnap.name + '」', () => upsertCase(delSnap));
+  pushUndo('刪除「' + caseLabel(delSnap) + '」', () => upsertCase(delSnap));
 }
 
 /* ================= 設定 ================= */
@@ -1811,7 +1819,7 @@ async function impReparse(){
 /* 逐筆比對現有排程：將匯入 / 重複略過 / 時段衝突略過（含本次匯入彼此間的衝突） */
 function impEvaluate(parsedCases){
   /* 佔格判定只看「本院區」未取消的排程；重複判定含已取消（避免匯入時讓被劃線取消的病人復活） */
-  const virtual = state.cases.filter(o => !o.cancelledAt && (o.site || 'hc') === site).map(o => ({date:o.date, room:o.room, slot:o.slot, span:o.span, name:o.name}));
+  const virtual = state.cases.filter(o => !o.cancelledAt && (o.site || 'hc') === site).map(o => ({date:o.date, room:o.room, slot:o.slot, span:o.span, name:o.name, chartNo:o.chartNo}));
   const sameKey = (o, pc) => (o.site || 'hc') === ((pc.site || 'hc')) && o.date === pc.date && o.room === pc.room && o.slot === pc.slot && o.name === pc.name;
   return parsedCases.map(pc => {
     const dupHit = state.cases.find(o => sameKey(o, pc));
@@ -1823,8 +1831,8 @@ function impEvaluate(parsedCases){
       const [b1, b2] = rangeOf(o);
       return a1 <= b2 && b1 <= a2;
     });
-    if(clash) return {c: pc, status: 'conflict', clashName: clash.name};
-    virtual.push({date: pc.date, room: pc.room, slot: pc.slot, span: pc.span, name: pc.name});
+    if(clash) return {c: pc, status: 'conflict', clashName: caseLabel(clash)};
+    virtual.push({date: pc.date, room: pc.room, slot: pc.slot, span: pc.span, name: pc.name, chartNo: pc.chartNo});
     const sameName = state.cases.some(o => (o.site || 'hc') === site && o.date === pc.date && o.name === pc.name && (o.room !== pc.room || o.slot !== pc.slot));
     return {c: pc, status: 'add', sameName};
   });
@@ -2344,7 +2352,7 @@ function placeOnDay(p, dateStr){
   else persist();
   renderMe();
   render();
-  pushUndo('排入「' + c.name + '」', () => {
+  pushUndo('排入「' + caseLabel(c) + '」', () => {
     removeCaseById(c.id);
     pending.push(p); cloudWritePending(p);
     renderMe();
@@ -2376,9 +2384,9 @@ function renderMeCal(){
     const mine = myCasesOn(key);
     monthTotal += mine.length;
     const chips = mine.map(c => `<span class="me-case" data-id="${esc(c.id)}"
-      title="${esc(slotLabel(c.slot) + ' ' + c.name + '（' + (c.site === 'bm' ? '生醫' : '新竹') + '）｜長按可拖到別天或拖回待排')}">${esc(c.name)}</span>`).join('');
+      title="${esc(slotLabel(c.slot) + ' ' + caseLabel(c) + '（' + (c.site === 'bm' ? '生醫' : '新竹') + '）｜長按可拖到別天或拖回待排')}">${esc(caseLabel(c))}</span>`).join('');
     h += `<div class="me-day${key === todayKey ? ' today' : ''}" data-date="${key}"
-      title="${mine.length ? esc(mine.map(c => slotLabel(c.slot) + ' ' + c.name).join('\n')) : '沒有你的刀'}">
+      title="${mine.length ? esc(mine.map(c => slotLabel(c.slot) + ' ' + caseLabel(c)).join('\n')) : '沒有你的刀'}">
       <span class="me-dnum">${d}</span>
       ${mine.length ? `<span class="me-cnt" data-date="${key}">${mine.length} 台</span><div class="me-names">${chips}</div>` : ''}
     </div>`;
@@ -2421,7 +2429,8 @@ function openPendModal(p){
 function savePend(){
   if(isViewer()){ denyEdit(); return; }
   const name = $('#pd-name').value.trim();
-  if(!name){ alert('請輸入姓名'); return; }
+  /* 與新增排程一致：必填是病歷號，姓名可留空 */
+  if(!$('#pd-chartNo').value.trim()){ alert('請輸入病歷號'); return; }
   const p = normPending({
     id: pendEditing ? pendEditing.id : uid(),
     site: $('#pd-site').value,
@@ -2448,7 +2457,7 @@ function savePend(){
 function deletePend(){
   if(!pendEditing) return;
   if(isViewer()){ denyEdit(); return; }
-  if(!confirm('刪除待排手術「' + (pendEditing.name || '') + '」？')) return;
+  if(!confirm('刪除待排手術「' + caseLabel(pendEditing) + '」？')) return;
   const id = pendEditing.id;
   pending = pending.filter(x => x.id !== id);
   cloudDeletePending(id);
@@ -2474,7 +2483,7 @@ function moveCaseToDay(c, dateStr){
   live.updatedBy = currentUser || ''; live.updatedByName = whoLabel() || ''; live.updatedAt = new Date().toISOString();
   if(mode === 'cloud'){ cloudWriteCase(live); cloudLog('移動', live); } else persist();
   renderMe(); render();
-  pushUndo('移動「' + live.name + '」', () => {
+  pushUndo('移動「' + caseLabel(live) + '」', () => {
     const cc = state.cases.find(x => x.id === c.id);
     if(!cc) return '這筆排程已不存在';
     const v = dragValidate(cc, from);
@@ -2502,13 +2511,13 @@ function caseToPending(c){
   if(mode === 'cloud'){ cloudWritePending(p); cloudDeleteCase(live.id); cloudLog('移回待排', snap); }
   else persist();
   renderMe(); render();
-  pushUndo('收回待排「' + snap.name + '」', () => {
+  pushUndo('收回待排「' + caseLabel(snap) + '」', () => {
     pending = pending.filter(x => x.id !== p.id);
     cloudDeletePending(p.id);
     upsertCase(snap);
     renderMe();
   });
-  toast('已收回待排清單：' + snap.name);
+  toast('已收回待排清單：' + caseLabel(snap));
 }
 
 /* --- 個人頁的拖曳：待排 ⇄ 行事曆 --- */
@@ -2530,7 +2539,7 @@ function pdragActivate(){
   const g = document.createElement('div');
   g.id = 'dragGhost';
   const o = pdrag.item;
-  g.textContent = (o.name || '') + (o.procedure ? '・' + o.procedure : '');
+  g.textContent = caseLabel(o) + (o.procedure ? '・' + o.procedure : '');
   document.body.appendChild(g);
   pdrag.ghost = g;
   try{ if(navigator.vibrate) navigator.vibrate(20); }catch(e){}
@@ -3084,7 +3093,7 @@ function dragValidate(c, t){
     const [b1, b2] = rangeOf(o);
     return i <= b2 && b1 <= a2;
   });
-  if(clash) return {ok: false, msg: '已排「' + clash.name + '」'};
+  if(clash) return {ok: false, msg: '已排「' + caseLabel(clash) + '」'};
   return {ok: true, msg: ''};
 }
 /* 依時段取得該列（不能用序號：週一～週五多了「時段負責醫師」列會錯位） */
@@ -3159,7 +3168,7 @@ function dragDrop(t){
     cloudWriteCase(c); cloudLog('移動', c);
   }else persist();
   render();
-  pushUndo('移動「' + c.name + '」', () => {
+  pushUndo('移動「' + caseLabel(c) + '」', () => {
     const cc = state.cases.find(x => x.id === id);
     if(!cc) return '這筆排程已不存在';
     const v = dragValidate(cc, from);
@@ -3168,7 +3177,7 @@ function dragDrop(t){
     writeCase(cc);
   });
   const entry = undoStack[undoStack.length - 1];
-  toast('已移動「' + c.name + '」→ ' + label(t), {label: '復原', fn: () => {
+  toast('已移動「' + caseLabel(c) + '」→ ' + label(t), {label: '復原', fn: () => {
     if(undoStack[undoStack.length - 1] !== entry){ toast('已有其他變更，請改用上方「↩ 復原」'); return; }
     doUndo();
   }});
@@ -3342,7 +3351,7 @@ async function copyCaseToClipboard(c){
       ok = document.execCommand('copy'); ta.remove();
     }catch(e){}
   }
-  toast(ok ? '📋 已複製「' + (c.name || '(未填姓名)') + '」，可直接貼到 Excel／Word'
+  toast(ok ? '📋 已複製「' + caseLabel(c) + '」，可直接貼到 Excel／Word'
            : '複製失敗：瀏覽器不允許存取剪貼簿');
 }
 
@@ -3372,13 +3381,13 @@ document.addEventListener('pointerup', e => {
   live.updatedBy = currentUser || ''; live.updatedByName = whoLabel() || ''; live.updatedAt = new Date().toISOString();
   if(mode === 'cloud'){ cloudWriteCase(live); cloudLog('改時長', live); } else persist();
   render();
-  pushUndo('調整「' + live.name + '」時長', () => {
+  pushUndo('調整「' + caseLabel(live) + '」時長', () => {
     const cc = state.cases.find(x => x.id === c.id);
     if(!cc) return '這筆排程已不存在';
     if(before > maxSpanAt(cc)) return '原本的時段已被其他排程占用';
     cc.span = before; writeCase(cc);
   });
-  toast('「' + live.name + '」改為 ' + spanLabel(span) + '（' + rangeLabel(live.slot, span) + '）');
+  toast('「' + caseLabel(live) + '」改為 ' + spanLabel(span) + '（' + rangeLabel(live.slot, span) + '）');
 });
 document.addEventListener('pointercancel', rdragCleanup);
 window.addEventListener('blur', rdragCleanup);
@@ -3492,7 +3501,7 @@ $('#f-cancelCase').onclick = () => {
     cxlDraft = '';
     if(saveCase() === false){ cxlDraft = prev; updateCxlUI(); }
   }else{
-    if(!confirm('將「' + $('#f-name').value.trim() + '」劃線取消？\n仍會保留在原格（劃線顯示），時段可再排別人，之後也可復原。')) return;
+    if(!confirm('將「' + caseLabel({name: $('#f-name').value, chartNo: $('#f-chartNo').value}) + '」劃線取消？\n仍會保留在原格（劃線顯示），時段可再排別人，之後也可復原。')) return;
     cxlDraft = new Date().toISOString();
     if(saveCase() === false){ cxlDraft = ''; updateCxlUI(); }
   }
