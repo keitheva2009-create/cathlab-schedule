@@ -172,7 +172,7 @@ td.filled.done{background:#d9efdb; color:#1b5e20}
 /* 帳號欄 -30%、病人欄 -50%；過長以…截斷，滑鼠停留看全文 */
 .log-table th:nth-child(2), .log-table td:nth-child(2){max-width:118px; overflow:hidden; text-overflow:ellipsis}
 .log-table th:nth-child(4), .log-table td:nth-child(4){max-width:140px; overflow:hidden; text-overflow:ellipsis}
-.log-act.新增{color:#17623b; font-weight:bold}
+.log-act.新增, .log-act.貼上{color:#17623b; font-weight:bold}
 .log-act.刪除{color:#b3261e; font-weight:bold}
 .log-act.取消{color:#b26a00; font-weight:bold}
 .log-act.修改, .log-act.復原, .log-act.移動, .log-act.匯入, .log-act.設定, .log-act.還原, .log-act.建立帳號, .log-act.權限{color:#1a56a8; font-weight:bold}
@@ -3176,11 +3176,14 @@ function dragDrop(t){
     cc.date = from.date; cc.room = from.room; cc.slot = from.slot;
     writeCase(cc);
   });
-  const entry = undoStack[undoStack.length - 1];
-  toast('已移動「' + caseLabel(c) + '」→ ' + label(t), {label: '復原', fn: () => {
-    if(undoStack[undoStack.length - 1] !== entry){ toast('已有其他變更，請改用上方「↩ 復原」'); return; }
+  toast('已移動「' + caseLabel(c) + '」→ ' + label(t), undoToastAction(undoStack[undoStack.length - 1], '請直接把它拖回原位'));
+}
+/* toast 上的「復原」按鈕：只有這個動作仍是最後一步時才能復原（工具列的復原鈕已移除） */
+function undoToastAction(entry, hint){
+  return {label: '復原', fn: () => {
+    if(undoStack[undoStack.length - 1] !== entry){ toast('之後已有其他變更，無法從這裡復原' + (hint ? '；' + hint : '')); return; }
     doUndo();
-  }});
+  }};
 }
 
 /* ---- 右鍵長按：拉長／縮短手術佔用時間 ---- */
@@ -3269,7 +3272,7 @@ function rdragUpdate(x, y){
 $('#grid').addEventListener('pointerdown', e => {
   if(e.button === 2){                            /* 右鍵：短按＝複製、長按＝調整佔用時間 */
     const td = e.target.closest('td.filled');
-    if(!td) return;
+    if(!td){ rightDownOnEmpty(e); return; }      /* 空白時段：按兩下＝貼上 */
     const c = state.cases.find(x => x.id === td.dataset.id);
     if(!c || c.cancelledAt) return;
     e.preventDefault();
@@ -3314,8 +3317,12 @@ document.addEventListener('pointerup', () => {
 document.addEventListener('pointercancel', dragCleanup);
 window.addEventListener('blur', dragCleanup);   /* 指標離開視窗／pointerup 遺失時不卡住 */
 $('#scroll').addEventListener('touchmove', e => { if(drag && drag.active) e.preventDefault(); }, {passive: false});
-/* 右鍵在排程上不跳出瀏覽器選單（長按要用來調整手術時間） */
-$('#grid').addEventListener('contextmenu', e => { if(drag || rdrag || e.target.closest('td.filled')) e.preventDefault(); });
+/* 右鍵在排程上不跳出瀏覽器選單（長按要用來調整手術時間）；
+   空白時段上也不跳（右鍵按兩下＝貼上，選單會擋住第二下） */
+$('#grid').addEventListener('contextmenu', e => {
+  const onEmpty = rEmptyMenu; rEmptyMenu = false;
+  if(drag || rdrag || onEmpty || e.target.closest('td.filled')) e.preventDefault();
+});
 
 /* 右鍵「短按」＝複製整筆排程資料（TSV＋HTML 表格，貼到 Excel 自動分欄、貼到 Word 成表格） */
 function buildCaseClip(c){
@@ -3330,6 +3337,7 @@ function buildCaseClip(c){
   return {tsv, html};
 }
 async function copyCaseToClipboard(c){
+  caseClip = snapOf(c);   /* 先記住（就算瀏覽器不給寫剪貼簿，仍可在本系統內貼上） */
   const {tsv, html} = buildCaseClip(c);
   let ok = false;
   try{
@@ -3351,8 +3359,63 @@ async function copyCaseToClipboard(c){
       ok = document.execCommand('copy'); ta.remove();
     }catch(e){}
   }
-  toast(ok ? '📋 已複製「' + caseLabel(c) + '」，可直接貼到 Excel／Word'
-           : '複製失敗：瀏覽器不允許存取剪貼簿');
+  const pasteHint = canEdit() ? '在空白時段按右鍵兩下可貼上' : '';
+  toast(ok ? '📋 已複製「' + caseLabel(c) + '」，可直接貼到 Excel／Word' + (pasteHint ? '；' + pasteHint : '')
+     : pasteHint ? '📋 已複製「' + caseLabel(c) + '」，' + pasteHint + '（瀏覽器不允許存取剪貼簿，無法貼到 Excel／Word）'
+     : '複製失敗：瀏覽器不允許存取剪貼簿');
+}
+
+/* ---- 右鍵複製後，在空白時段「按右鍵兩下」＝貼上（新增一筆內容相同的排程） ---- */
+const RDBL_MS = 600;     /* 兩下右鍵的最長間隔 */
+let caseClip = null;     /* 最近一次右鍵複製的排程（快照，只存在這個分頁） */
+let rEmpty = null;       /* 空白時段上一次右鍵：{key, t} */
+let rEmptyMenu = false;  /* 這次右鍵按在空白時段 → 不跳瀏覽器選單 */
+function rightDownOnEmpty(e){
+  const td = e.target.closest('td.empty');
+  if(!td || drag || rdrag) return;
+  rEmptyMenu = true;
+  const t = {date: td.dataset.date, room: +td.dataset.room, slot: td.dataset.slot};
+  const key = t.date + '|' + t.room + '|' + t.slot, now = Date.now();
+  if(rEmpty && rEmpty.key === key && now - rEmpty.t <= RDBL_MS){
+    rEmpty = null;
+    pasteCaseAt(t);
+  }else rEmpty = {key, t: now};
+}
+/* 貼上：病人與手術資料照抄；日期／時段／導管室＝目標格；
+   手術起訖、取消狀態不帶過去；後面時段已有排程時自動縮短到放得下的長度 */
+function pasteCaseAt(t){
+  if(!requireEdit()) return false;
+  if(!caseClip){ toast('請先在要複製的排程上按一下滑鼠右鍵，再到空白時段按右鍵兩下貼上'); return false; }
+  const i = DAY_SLOTS.indexOf(t.slot);
+  if(i < 0 || !t.date) return false;
+  /* 依資料判斷是否已被占用（不看畫面：重疊顯示的排程可能讓已占用的格子看起來是空的） */
+  const busyAt = idx => state.cases.find(o => {
+    if(o.cancelledAt || (o.site || 'hc') !== site || o.date !== t.date || o.room !== t.room) return false;
+    const [b1, b2] = rangeOf(o);
+    return idx >= b1 && idx <= b2;
+  });
+  const first = busyAt(i);
+  if(first){ toast('無法貼上：該時段已排「' + caseLabel(first) + '」'); return false; }
+  const src = caseClip, want = Math.min(src.span || 1, maxSpan(t.slot));
+  let span = 1;
+  while(span < want && !busyAt(i + span)) span++;
+  const nowIso = new Date().toISOString(), who = currentUser || '', whoName = whoLabel() || '';
+  const c = {id: uid(), date: t.date, room: t.room, site, slot: t.slot, span};
+  ['name', 'chartNo', 'birthday', 'sex', 'procedure', 'physician', 'bed', 'detail', 'note']
+    .forEach(k => { c[k] = String(src[k] == null ? '' : src[k]); });
+  Object.assign(c, {startedAt: '', endedAt: '', cancelledAt: '',
+    createdBy: who, createdByName: whoName, createdAt: nowIso,
+    updatedBy: who, updatedByName: whoName, updatedAt: nowIso, cancelledBy: '', cancelledByName: ''});
+  state.cases.push(c);
+  if(mode === 'cloud'){ cloudWriteCase(c); cloudLog('貼上', c); } else persist();
+  render();
+  const nid = c.id;
+  pushUndo('貼上「' + caseLabel(c) + '」', () => removeCaseById(nid));
+  const where = md(new Date(t.date + 'T00:00:00')) + ' ' + rangeLabel(t.slot, span) + '（' + siteRoomName(t.room) + '）';
+  const cut = span < (src.span || 1) ? '；後面已有排程，佔用時間由 ' + spanLabel(src.span || 1) + ' 縮為 ' + spanLabel(span) : '';
+  toast('📋 已貼上「' + caseLabel(c) + '」→ ' + where + cut,
+    undoToastAction(undoStack[undoStack.length - 1], '可點該筆排程「永久刪除」'));
+  return true;
 }
 
 /* 右鍵長按：拖曳中／放開套用 */
